@@ -29,10 +29,11 @@ apscheduler>=3.10,<4
 # anthropic>=0.34
 # openai>=1.40
 
-# --- Google APIs (W1-10 〜 で追加) ---
-# google-auth>=2.30
-# google-api-python-client>=2.130
-# google-analytics-data>=0.18
+# --- Google APIs (W1-10) ---
+google-auth>=2.30,<3
+google-auth-oauthlib>=1.2,<2
+google-api-python-client>=2.130,<3
+google-analytics-data>=0.18,<1
 
 # --- Misc (後続チケットで追加) ---
 # beautifulsoup4>=4.12
