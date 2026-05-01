@@ -24,10 +24,10 @@ jinja2>=3.1,<4
 # --- Scheduler (W3-01) ---
 apscheduler>=3.10,<4
 
-# --- AI SDK (W2-08 〜 で追加) ---
-# google-genai>=0.5
-# anthropic>=0.34
-# openai>=1.40
+# --- AI SDK (W1-12 / W2-08) ---
+google-genai>=0.5
+anthropic>=0.34,<1
+openai>=1.40,<2
 
 # --- Google APIs (W1-10) ---
 google-auth>=2.30,<3
