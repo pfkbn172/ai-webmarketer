@@ -1,0 +1,21 @@
+name: Scheduled Watchdog
+
+# 仕様書 7.2: VPS 上のスケジューラとは別系統での外形監視。
+# 実装は W4-07 で本格化(現状はスケルトン)。
+
+on:
+  schedule:
+    # 毎週月曜 12:00 JST = 03:00 UTC(VPS の各収集ジョブが完了している想定時刻の数時間後)
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Check marketer-api health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skeleton — replace with real health check in W4-07
+        run: |
+          echo "TODO (W4-07): curl https://app.kiseeeen.co.jp/marketer/api/v1/healthz"
+          echo "TODO (W4-07): GET /marketer/api/v1/admin/jobs/last-success?since=24h"
+          echo "TODO (W4-07): on failure → notify via Resend or webhook"
