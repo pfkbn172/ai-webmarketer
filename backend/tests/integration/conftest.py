@@ -27,6 +27,20 @@ def _has_postgres() -> bool:
     return os.environ.get("CI") != "true" and "127.0.0.1" in settings.db_dsn
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_app_engine():
+    """app/db/base.py のグローバル engine を毎テスト作り直す。
+
+    pytest-asyncio が各テストで新しい event loop を作るため、モジュールロード時に
+    作った engine が古い loop の connection を保持してしまい、テスト終端で
+    "Event loop is closed" を起こす。reset_engine() で同じ loop の engine に統一する。
+    """
+    from app.db.base import reset_engine
+    await reset_engine()
+    yield
+    await reset_engine()
+
+
 @pytest_asyncio.fixture
 async def pg_session() -> AsyncIterator[AsyncSession]:
     """1 テスト 1 トランザクション。最後にロールバックして DB 状態を元に戻す。"""
@@ -42,15 +56,9 @@ async def pg_session() -> AsyncIterator[AsyncSession]:
 
 @pytest_asyncio.fixture
 async def two_tenants(pg_session: AsyncSession) -> tuple[uuid.UUID, uuid.UUID]:
-    """RLS テスト用に 2 つのテナントと、それぞれ 1 件ずつのターゲットクエリを作成。
-
-    fixture の中では `app.tenant_id` を都度 set_config で切り替え。
-    INSERT 時の WITH CHECK を通すため、必ず正しい tenant_id を設定してから挿入する。
-    """
+    """RLS テスト用に 2 つのテナントと、それぞれ 1 件ずつのターゲットクエリを作成。"""
     a = uuid.uuid4()
     b = uuid.uuid4()
-    # tenants の RLS は WITH CHECK で id = current_setting('app.tenant_id') を要求するので、
-    # 各 tenant 作成前に該当 id を session 変数に設定する必要がある。
     for tid in (a, b):
         await pg_session.execute(
             text("SELECT set_config('app.tenant_id', :tid, true)"),

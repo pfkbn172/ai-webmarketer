@@ -8,15 +8,18 @@ import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import String, Uuid
 
-from app.db.base import Base
 from app.db.repositories.base import BaseRepository
 
 
-# --- テスト専用ダミーモデル(本番テーブルとは別のテーブル名にして衝突回避)---
-class _DummyItem(Base):
+class _TestBase(DeclarativeBase):
+    """Dummy 用の独立した Base。本番 metadata を汚染しない。"""
+
+
+# --- テスト専用ダミーモデル ---
+class _DummyItem(_TestBase):
     __tablename__ = "_test_dummy_item"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
@@ -29,9 +32,14 @@ class _DummyRepo(BaseRepository[_DummyItem]):
 
 @pytest.fixture
 async def session() -> AsyncSession:
+    """SQLite in-memory に Dummy テーブルだけを作る。
+
+    Base.metadata 全体を create_all すると本番 ORM の JSONB / PGUUID 等が
+    SQLite で render できずエラーになる。Dummy のテーブルだけ明示作成する。
+    """
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_DummyItem.__table__.create)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as s:
         yield s

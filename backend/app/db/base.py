@@ -24,12 +24,16 @@ class Base(DeclarativeBase):
     """全 ORM モデルの基底クラス。Alembic autogenerate で参照される。"""
 
 
-engine = create_async_engine(
-    settings.db_dsn,
-    pool_size=settings.db_pool_size,
-    pool_pre_ping=True,
-    future=True,
-)
+def _make_engine():
+    return create_async_engine(
+        settings.db_dsn,
+        pool_size=settings.db_pool_size,
+        pool_pre_ping=True,
+        future=True,
+    )
+
+
+engine = _make_engine()
 
 SessionLocal = async_sessionmaker(
     bind=engine,
@@ -38,14 +42,27 @@ SessionLocal = async_sessionmaker(
 )
 
 
+async def reset_engine() -> None:
+    """テストでイベントループ切替時に engine を作り直す用。本番では通常使わない。"""
+    global engine, SessionLocal  # noqa: PLW0603
+    await engine.dispose()
+    engine = _make_engine()
+    SessionLocal = async_sessionmaker(
+        bind=engine, expire_on_commit=False, class_=AsyncSession
+    )
+
+
 async def get_db_session() -> AsyncIterator[AsyncSession]:
     """FastAPI Depends 用。
 
     トランザクション境界はリクエスト単位。エンドポイント側が明示的に commit() を呼ばない
     場合は finally で rollback されるため、書き込みのある API は明示的に commit すること
     (Repository / サービス層で session.commit() を呼ぶ慣習にする)。
+
+    SessionLocal はモジュール変数を毎回 lookup する(reset_engine 後の再作成に追従)。
     """
-    async with SessionLocal() as session:
+    session_factory = globals()["SessionLocal"]
+    async with session_factory() as session:
         try:
             await _apply_tenant_setting(session)
             yield session
