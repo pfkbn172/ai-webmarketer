@@ -19,16 +19,18 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Skeleton check (no backend yet)
+      - name: Install dependencies
+        working-directory: backend
         run: |
-          if [ -f backend/requirements.txt ]; then
-            pip install -r backend/requirements.txt
-            pip install ruff mypy pytest
-            ruff check backend/
-            pytest backend/ -q || true
-          else
-            echo "Backend not yet scaffolded — skipping (W1-03 で作成予定)"
-          fi
+          pip install -r requirements.txt
+
+      - name: Lint (ruff)
+        working-directory: backend
+        run: ruff check .
+
+      - name: Test (pytest)
+        working-directory: backend
+        run: pytest -q
 
   frontend:
     name: Frontend (typecheck + build)

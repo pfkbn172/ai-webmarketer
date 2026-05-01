@@ -1,0 +1,43 @@
+[project]
+name = "ai-web-marketer-backend"
+version = "0.1.0"
+description = "AIウェブマーケター SaaS バックエンド"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "ASYNC"]
+ignore = ["E501"]  # ruff format で行長は管理する
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI の Depends / Query / Path / Body は引数デフォルトで使うのが慣用
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body", "fastapi.Header", "fastapi.Cookie"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+plugins = ["pydantic.mypy"]
+exclude = ["alembic/versions/", "tests/"]
+
+[[tool.mypy.overrides]]
+module = ["alembic.*", "google.*", "feedparser.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
+filterwarnings = ["ignore::DeprecationWarning"]
