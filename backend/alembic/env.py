@@ -26,8 +26,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # モデル登録: app/db/models/ 配下を import すると Base.metadata に反映される。
-# W1-05 で全モデルを実装した時点で、ここで明示 import する。
-# from app.db import models  # noqa: F401
+from app.db import models  # noqa: E402, F401
 
 target_metadata = Base.metadata
 

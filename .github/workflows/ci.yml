@@ -28,9 +28,9 @@ jobs:
         working-directory: backend
         run: ruff check .
 
-      - name: Test (pytest)
+      - name: Test (pytest unit only — integration は実 PostgreSQL が必要)
         working-directory: backend
-        run: pytest -q
+        run: pytest tests/unit -q
 
   frontend:
     name: Frontend (typecheck + build)
