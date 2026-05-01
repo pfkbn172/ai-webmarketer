@@ -45,13 +45,14 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Skeleton check (no frontend yet)
-        run: |
-          if [ -f frontend/package.json ]; then
-            cd frontend
-            npm ci
-            npm run typecheck
-            npm run build
-          else
-            echo "Frontend not yet scaffolded — skipping (W1-07 で作成予定)"
-          fi
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build

@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light(編集的・落ち着いた色調)*/
+    --background: 0 0% 100%;
+    --foreground: 222 22% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 22% 14%;
+    --primary: 222 47% 21%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 21%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 46%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 21%;
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 88%;
+    --input: 214 32% 88%;
+    --ring: 222 47% 21%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Dark(デフォルト想定。仕様書 14.3 に従う)*/
+    --background: 222 22% 8%;
+    --foreground: 210 40% 96%;
+    --card: 222 22% 11%;
+    --card-foreground: 210 40% 96%;
+    --primary: 210 40% 96%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 19% 17%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 19% 17%;
+    --muted-foreground: 215 16% 65%;
+    --accent: 217 19% 17%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 0 60% 50%;
+    --destructive-foreground: 210 40% 96%;
+    --border: 217 19% 22%;
+    --input: 217 19% 22%;
+    --ring: 213 27% 70%;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  html {
+    font-family:
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo',
+      sans-serif;
+  }
+}
