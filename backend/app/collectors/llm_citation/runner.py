@@ -1,9 +1,7 @@
 """AI 引用モニタジョブのランナー。
 
-各テナントについて、ターゲットクエリ × 4 LLM(ChatGPT/Claude/Perplexity/Gemini)で
-回答を取得し、文字列マッチ判定して citation_logs に保存する。
-
-AI Overviews(SerpApi)は W2-05 で別途追加(構造は同じ、ハードコード呼び出し)。
+各テナントについて、ターゲットクエリ × 主要 5 LLM(ChatGPT/Claude/Perplexity/Gemini/AIO)
+で回答を取得し、文字列マッチ判定して citation_logs に保存する。
 """
 
 import asyncio
@@ -14,6 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collectors.llm_citation._types import CitationProbeResult
+from app.collectors.llm_citation.aio_client import AIOverviewsCitationClient
 from app.collectors.llm_citation.chatgpt_client import ChatGPTCitationClient
 from app.collectors.llm_citation.claude_client import ClaudeCitationClient
 from app.collectors.llm_citation.gemini_client import GeminiCitationClient
@@ -182,6 +181,11 @@ async def _build_clients(
     )
     if cred and cred.get("api_key"):
         clients[LLMProviderEnum.gemini] = GeminiCitationClient(cred["api_key"])
+
+    # AI Overviews(SerpApi)
+    cred = await repo.get_decrypted(tenant_id, CredentialProviderEnum.serpapi)
+    if cred and cred.get("api_key"):
+        clients[LLMProviderEnum.aio] = AIOverviewsCitationClient(cred["api_key"])
 
     return clients
 

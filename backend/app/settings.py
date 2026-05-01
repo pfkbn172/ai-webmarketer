@@ -27,5 +27,22 @@ class Settings(BaseSettings):
     jwt_ttl_minutes: int = Field(default=60)
     jwt_refresh_ttl_days: int = Field(default=14)
 
+    # システム共通 AI Provider キー(テナント別資格情報がない場合のフォールバック)
+    gemini_api_key_ai_engine: str = Field(default="")
+    gemini_api_key_citation_monitor: str = Field(default="")
+    openai_api_key: str = Field(default="")
+    anthropic_api_key: str = Field(default="")
+    perplexity_api_key: str = Field(default="")
+    serpapi_key: str = Field(default="")
+
+    resend_api_key: str = Field(default="")
+    mail_from: str = Field(default="marketer@kiseeeen.co.jp")
+    mail_notify_to: str = Field(default="")
+
+    # ジョブ実行対象テナント(カンマ区切り UUID 一覧)
+    # Phase 1: tenants テーブルが RLS で守られているためスケジューラから列挙できない。
+    # 環境変数で運用対象を明示する(マルチテナント時は将来 BYPASSRLS ロールに切替)。
+    active_tenant_ids: str = Field(default="")
+
 
 settings = Settings()

@@ -11,6 +11,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.author_profile import AuthorProfile
 from app.db.models.citation_log import CitationLog
 from app.db.models.competitor import Competitor
+from app.db.models.competitor_post import CompetitorPost
 from app.db.models.content import Content
 from app.db.models.content_metric import ContentMetric
 from app.db.models.enums import (
@@ -49,6 +50,7 @@ __all__ = [
     "AuthorProfile",
     "CitationLog",
     "Competitor",
+    "CompetitorPost",
     "ComplianceTypeEnum",
     "Content",
     "ContentMetric",

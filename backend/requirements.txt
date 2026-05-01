@@ -35,11 +35,11 @@ google-auth-oauthlib>=1.2,<2
 google-api-python-client>=2.130,<3
 google-analytics-data>=0.18,<1
 
-# --- Misc (後続チケットで追加) ---
-# beautifulsoup4>=4.12
-# lxml>=5
-# feedparser>=6.0
-# resend>=2.0
+# --- Schema audit / RSS / Mail (W2-04 / W2-06 / W3-02) ---
+beautifulsoup4>=4.12,<5
+lxml>=5
+feedparser>=6.0,<7
+resend>=2.0,<3
 
 # --- Dev ---
 ruff>=0.6

@@ -1,7 +1,14 @@
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/Button';
 import { useLogout, useMe } from '@/hooks/useAuth';
+import { cn } from '@/lib/cn';
+
+const NAV = [
+  { to: '/', label: 'ダッシュボード', exact: true },
+  { to: '/queries', label: 'ターゲットクエリ' },
+  { to: '/citations', label: 'AI 引用モニタ' },
+];
 
 export default function AppShell() {
   const { data: me } = useMe();
@@ -11,9 +18,30 @@ export default function AppShell() {
   return (
     <div className="min-h-screen bg-background">
       <header className="flex h-14 items-center justify-between border-b border-border px-6">
-        <div className="font-semibold tracking-tight">AIウェブマーケター</div>
+        <Link to="/" className="font-semibold tracking-tight">
+          AIウェブマーケター
+        </Link>
+        <nav className="hidden items-center gap-1 md:flex">
+          {NAV.map((n) => (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              end={n.exact}
+              className={({ isActive }) =>
+                cn(
+                  'rounded-md px-3 py-1.5 text-sm transition-colors',
+                  isActive
+                    ? 'bg-secondary text-secondary-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )
+              }
+            >
+              {n.label}
+            </NavLink>
+          ))}
+        </nav>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          {me && <span>{me.email}</span>}
+          {me && <span className="hidden sm:inline">{me.email}</span>}
           <Button
             size="sm"
             variant="ghost"
