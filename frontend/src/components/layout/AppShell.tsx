@@ -6,8 +6,11 @@ import { cn } from '@/lib/cn';
 
 const NAV = [
   { to: '/', label: 'ダッシュボード', exact: true },
-  { to: '/queries', label: 'ターゲットクエリ' },
-  { to: '/citations', label: 'AI 引用モニタ' },
+  { to: '/queries', label: 'クエリ' },
+  { to: '/citations', label: '引用モニタ' },
+  { to: '/citations/manual', label: '手入力' },
+  { to: '/inquiries', label: '問い合わせ' },
+  { to: '/settings', label: '設定' },
   { to: '/manual', label: 'マニュアル' },
 ];
 

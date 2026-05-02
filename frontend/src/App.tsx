@@ -3,10 +3,13 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import AppShell from '@/components/layout/AppShell';
 import RequireAuth from '@/components/layout/RequireAuth';
+import CitationManualPage from '@/pages/CitationManualPage';
 import CitationMonitorPage from '@/pages/CitationMonitorPage';
 import DashboardPage from '@/pages/DashboardPage';
+import InquiriesPage from '@/pages/InquiriesPage';
 import LoginPage from '@/pages/LoginPage';
 import ManualPage from '@/pages/ManualPage';
+import SettingsPage from '@/pages/SettingsPage';
 import TargetQueriesPage from '@/pages/TargetQueriesPage';
 
 const queryClient = new QueryClient({
@@ -29,6 +32,9 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="queries" element={<TargetQueriesPage />} />
             <Route path="citations" element={<CitationMonitorPage />} />
+            <Route path="citations/manual" element={<CitationManualPage />} />
+            <Route path="inquiries" element={<InquiriesPage />} />
+            <Route path="settings" element={<SettingsPage />} />
             <Route path="manual" element={<ManualPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

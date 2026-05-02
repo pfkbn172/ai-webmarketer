@@ -1,6 +1,19 @@
 from fastapi import FastAPI
 
-from app.api.v1 import auth, citation_logs, exports, health, kpi, target_queries, tenants
+from app.api.v1 import (
+    auth,
+    author_profiles,
+    citation_logs,
+    citation_manual,
+    competitors,
+    credentials,
+    exports,
+    health,
+    inquiries,
+    kpi,
+    target_queries,
+    tenants,
+)
 from app.auth.middleware import AuthMiddleware
 from app.settings import settings
 from app.utils.logger import configure_logging
@@ -25,8 +38,13 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(tenants.router, prefix="/api/v1")
 app.include_router(target_queries.router, prefix="/api/v1")
 app.include_router(citation_logs.router, prefix="/api/v1")
+app.include_router(citation_manual.router, prefix="/api/v1")
 app.include_router(kpi.router, prefix="/api/v1")
 app.include_router(exports.router, prefix="/api/v1")
+app.include_router(author_profiles.router, prefix="/api/v1")
+app.include_router(competitors.router, prefix="/api/v1")
+app.include_router(credentials.router, prefix="/api/v1")
+app.include_router(inquiries.router, prefix="/api/v1")
 
 # Webhook(認証不要、テナント ID は URL に含める)
 app.include_router(wh_wordpress.router, prefix="/webhook")
