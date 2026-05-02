@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-const ADMIN_EMAIL = 'pfkbn172@gmail.com';
-const ADMIN_PASSWORD = 'TempPassword123!';
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'pfkbn172@gmail.com';
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'TempPassword123!';
 
 test.describe('Target Queries page', () => {
   test.beforeEach(async ({ page }) => {

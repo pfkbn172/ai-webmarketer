@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 
-const ADMIN_EMAIL = 'pfkbn172@gmail.com';
-const ADMIN_PASSWORD = 'TempPassword123!';
+// 環境変数から取得(本番パスワードを git に残さない)
+// 例: E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... npx playwright test
+const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL ?? 'pfkbn172@gmail.com';
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'TempPassword123!';
 
 test.describe('Auth flow', () => {
   test('login -> dashboard -> logout', async ({ page }) => {
