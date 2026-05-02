@@ -153,39 +153,60 @@ async def run_for_tenant(
         raise
 
 
+async def _resolve_api_key(
+    repo: TenantCredentialRepository,
+    tenant_id: uuid.UUID,
+    cred_provider: CredentialProviderEnum,
+    env_attr: str,
+) -> str | None:
+    """tenant_credentials を最優先、なければ .env(settings)を見る。
+
+    本来は scripts/register_llm_credentials.py で .env → tenant_credentials に
+    コピー登録するのが推奨だが、開発・初期動作確認では .env だけでも
+    引用モニタが回るようフォールバックする。
+    """
+    from app.settings import settings
+
+    cred = await repo.get_decrypted(tenant_id, cred_provider)
+    if cred and cred.get("api_key"):
+        return cred["api_key"]
+    return getattr(settings, env_attr, None) or None
+
+
 async def _build_clients(
     session: AsyncSession, tenant_id: uuid.UUID
 ) -> dict[LLMProviderEnum, object]:
-    """tenant_credentials に登録された API キーから LLM クライアントを生成。"""
+    """tenant_credentials または .env の API キーから LLM クライアントを生成。"""
     repo = TenantCredentialRepository(session)
     clients: dict[LLMProviderEnum, object] = {}
 
-    # ChatGPT
-    cred = await repo.get_decrypted(tenant_id, CredentialProviderEnum.openai)
-    if cred and cred.get("api_key"):
-        clients[LLMProviderEnum.chatgpt] = ChatGPTCitationClient(cred["api_key"])
+    if key := await _resolve_api_key(
+        repo, tenant_id, CredentialProviderEnum.openai, "openai_api_key"
+    ):
+        clients[LLMProviderEnum.chatgpt] = ChatGPTCitationClient(key)
 
-    # Claude
-    cred = await repo.get_decrypted(tenant_id, CredentialProviderEnum.anthropic)
-    if cred and cred.get("api_key"):
-        clients[LLMProviderEnum.claude] = ClaudeCitationClient(cred["api_key"])
+    if key := await _resolve_api_key(
+        repo, tenant_id, CredentialProviderEnum.anthropic, "anthropic_api_key"
+    ):
+        clients[LLMProviderEnum.claude] = ClaudeCitationClient(key)
 
-    # Perplexity
-    cred = await repo.get_decrypted(tenant_id, CredentialProviderEnum.perplexity)
-    if cred and cred.get("api_key"):
-        clients[LLMProviderEnum.perplexity] = PerplexityCitationClient(cred["api_key"])
+    if key := await _resolve_api_key(
+        repo, tenant_id, CredentialProviderEnum.perplexity, "perplexity_api_key"
+    ):
+        clients[LLMProviderEnum.perplexity] = PerplexityCitationClient(key)
 
-    # Gemini(引用モニタ専用キー)
-    cred = await repo.get_decrypted(
-        tenant_id, CredentialProviderEnum.gemini_citation_monitor
-    )
-    if cred and cred.get("api_key"):
-        clients[LLMProviderEnum.gemini] = GeminiCitationClient(cred["api_key"])
+    if key := await _resolve_api_key(
+        repo,
+        tenant_id,
+        CredentialProviderEnum.gemini_citation_monitor,
+        "gemini_api_key_citation_monitor",
+    ):
+        clients[LLMProviderEnum.gemini] = GeminiCitationClient(key)
 
-    # AI Overviews(SerpApi)
-    cred = await repo.get_decrypted(tenant_id, CredentialProviderEnum.serpapi)
-    if cred and cred.get("api_key"):
-        clients[LLMProviderEnum.aio] = AIOverviewsCitationClient(cred["api_key"])
+    if key := await _resolve_api_key(
+        repo, tenant_id, CredentialProviderEnum.serpapi, "serpapi_key"
+    ):
+        clients[LLMProviderEnum.aio] = AIOverviewsCitationClient(key)
 
     return clients
 

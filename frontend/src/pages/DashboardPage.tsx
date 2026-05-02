@@ -40,17 +40,25 @@ export default function DashboardPage() {
     queryFn: () => fetchKpiSummary(30),
   });
 
+  // ラベルは「集計対象として要求した期間」を表す(API レスポンスの period_days)
+  // 実データがそれ未満でも「過去 30 日」と表示し続けるのがユーザーの期待に近い。
+  const periodHint = data ? `過去 ${data.period_days} 日` : '過去 30 日';
+
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="AI 引用回数"
           value={data?.ai_citation_count ?? '—'}
-          hint="過去 30 日"
+          hint={periodHint}
         />
-        <KpiCard label="オーガニックセッション" value={data?.sessions ?? '—'} hint="過去 30 日" />
-        <KpiCard label="問い合わせ数" value={data?.inquiries_count ?? '—'} hint="過去 30 日" />
-        <KpiCard label="公開記事数" value={data?.contents_published ?? '—'} hint="過去 30 日" />
+        <KpiCard
+          label="オーガニックセッション"
+          value={data?.sessions ?? '—'}
+          hint={periodHint}
+        />
+        <KpiCard label="問い合わせ数" value={data?.inquiries_count ?? '—'} hint={periodHint} />
+        <KpiCard label="公開記事数" value={data?.contents_published ?? '—'} hint={periodHint} />
       </div>
 
       <Card>

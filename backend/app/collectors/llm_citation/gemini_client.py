@@ -2,10 +2,22 @@
 
 仕様書 6.3: AI 処理用 Gemini と引用モニタ用 Gemini は別 API キーで分離可能。
 本ファイルは抽象レイヤを通さず、ハードコードで grounding を使う。
+
+URL 解決の課題:
+    Gemini API の Grounding 機能は引用元 URL を
+        https://vertexaisearch.cloud.google.com/grounding-api-redirect/<token>
+    のラッパー形式で返す。`web.uri` も `web.title` から推測した URL も同じく
+    ラッパーのため、ドメイン照合では self_cited 判定が常に false になる問題があった。
+
+    対策:
+    1) chunk.web.domain(SDK が出してくれる場合あり)を最優先で採用
+    2) 無ければラッパー URL を HEAD/GET でリダイレクト追跡して実 URL を取得
+       同一クエリ内ではキャッシュして HEAD 重複呼出しを抑える
 """
 
 import re
 
+import httpx
 from google import genai
 from google.genai import types as gtypes
 
@@ -16,6 +28,7 @@ from app.utils.retry import retry_async
 
 log = get_logger(__name__)
 URL_RE = re.compile(r"https?://[^\s\)\]\>\}]+")
+WRAPPER_HOST = "vertexaisearch.cloud.google.com"
 
 
 class GeminiCitationClient:
@@ -32,20 +45,34 @@ class GeminiCitationClient:
             model=self._model, contents=query_text, config=config
         )
         text = resp.text or ""
-        urls: list[str] = []
-        # grounding_metadata の web_search_queries / grounding_chunks から URL 抽出
+        raw_uris: list[str] = []
+        # SDK が直接ドメインを出してくれる場合の補助情報を集める
+        domain_hints: list[str] = []
         for cand in (resp.candidates or []):
             gm = getattr(cand, "grounding_metadata", None)
             if not gm:
                 continue
             for chunk in (getattr(gm, "grounding_chunks", []) or []):
                 web = getattr(chunk, "web", None)
-                if web and getattr(web, "uri", None):
-                    urls.append(web.uri)
-        if not urls:
-            urls = URL_RE.findall(text)
-        urls = list(dict.fromkeys(urls))
-        log.info("gemini_probe_done", query=query_text[:60], n_urls=len(urls))
+                if not web:
+                    continue
+                u = getattr(web, "uri", None)
+                if u:
+                    raw_uris.append(u)
+                d = getattr(web, "domain", None)
+                if d:
+                    domain_hints.append(d)
+        # text 中の URL も集める(grounding 外で言及された場合のため)
+        if not raw_uris:
+            raw_uris = URL_RE.findall(text)
+
+        urls = await _resolve_wrapper_urls(raw_uris, domain_hints)
+        log.info(
+            "gemini_probe_done",
+            query=query_text[:60],
+            n_urls=len(urls),
+            wrapper_resolved=sum(1 for u in raw_uris if WRAPPER_HOST in u),
+        )
         return CitationProbeResult(
             llm_provider=LLMProviderEnum.gemini,
             query_text=query_text,
@@ -53,3 +80,53 @@ class GeminiCitationClient:
             cited_urls=urls,
             raw_response=resp.model_dump() if hasattr(resp, "model_dump") else None,
         )
+
+
+async def _resolve_wrapper_urls(
+    raw_uris: list[str], domain_hints: list[str]
+) -> list[str]:
+    """vertexaisearch のラッパー URL を実 URL に展開する。
+
+    - ラッパー以外の URL はそのまま採用
+    - ラッパー URL は HEAD で Location を取得(同一 URL は 1 回だけ)
+    - HEAD が失敗(403 等)した場合は domain_hints 由来の合成 URL "https://<domain>/" にフォールバック
+    """
+    cache: dict[str, str | None] = {}
+    out: list[str] = []
+    timeout = httpx.Timeout(10.0)
+
+    async with httpx.AsyncClient(
+        timeout=timeout, follow_redirects=False, headers={"User-Agent": "Mozilla/5.0"}
+    ) as client:
+        for i, u in enumerate(raw_uris):
+            if WRAPPER_HOST not in u:
+                out.append(u)
+                continue
+            if u in cache:
+                resolved = cache[u]
+                if resolved:
+                    out.append(resolved)
+                continue
+            resolved: str | None = None
+            try:
+                # HEAD ではブロックされる場合があるので GET も試す
+                for method in ("HEAD", "GET"):
+                    r = await client.request(method, u)
+                    loc = r.headers.get("location")
+                    if loc:
+                        resolved = loc
+                        break
+                    if 200 <= r.status_code < 300:
+                        # リダイレクトせず本文を返してきた場合は実 URL を取れない
+                        resolved = None
+                        break
+            except httpx.HTTPError as exc:
+                log.warning("gemini_wrapper_resolve_failed", url=u[:80], error=str(exc))
+            cache[u] = resolved
+            if resolved:
+                out.append(resolved)
+            elif i < len(domain_hints) and domain_hints[i]:
+                # 順序対応のフォールバック(grounding chunks は順序保持)
+                out.append(f"https://{domain_hints[i]}/")
+
+    return list(dict.fromkeys(out))  # 重複除去

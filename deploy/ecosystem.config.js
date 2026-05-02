@@ -26,22 +26,21 @@ module.exports = {
       merge_logs: true,
       time: true,
     },
-    // marketer-worker は W3-01 で APScheduler を本実装してから登録。
-    // 現状は entrypoint がまだ未作成のためコメントアウト。
-    // {
-    //   name: 'marketer-worker',
-    //   cwd: '/var/www/ai-web-marketer/backend',
-    //   script: '/var/www/ai-web-marketer/backend/.venv/bin/python',
-    //   args: '-m app.worker.entrypoint',
-    //   interpreter: 'none',
-    //   env: { PYTHONUNBUFFERED: '1' },
-    //   max_memory_restart: '500M',
-    //   autorestart: true,
-    //   watch: false,
-    //   out_file: '/var/log/marketer/worker.out.log',
-    //   error_file: '/var/log/marketer/worker.err.log',
-    //   merge_logs: true,
-    //   time: true,
-    // },
+    
+    {
+      name: 'marketer-worker',
+      cwd: '/var/www/ai-web-marketer/backend',
+      script: '/var/www/ai-web-marketer/backend/.venv/bin/python',
+      args: '-m app.worker.entrypoint',
+      interpreter: 'none',
+      env: { PYTHONUNBUFFERED: '1' },
+      max_memory_restart: '500M',
+      autorestart: true,
+      watch: false,
+      out_file: '/var/log/marketer/worker.out.log',
+      error_file: '/var/log/marketer/worker.err.log',
+      merge_logs: true,
+      time: true,
+    },
   ],
 };

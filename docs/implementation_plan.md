@@ -1178,6 +1178,57 @@ module.exports = {
 
 ---
 
+## 13.5 本番運用セットアップ手順(Phase 1 Week 4 完了後の追加メモ)
+
+実装完了後、初回稼働で発見した運用上の手順を本節に追記する(Phase 2 開始前に
+本書を v1.1 として更新する想定)。
+
+### 13.5.1 LLM API キーの登録ルート
+
+引用モニタの `_build_clients()` は **tenant_credentials を最優先** とし、
+無ければ `.env`(`MARKETER_*_API_KEY`)にフォールバックする。
+本番運用では tenant_credentials に登録するのが正解。`.env` だけ書いた場合も
+動くが、テナント別の使い分けはできない(将来のマルチテナントで詰む)。
+
+**初期セットアップの最短ルート**:
+
+```bash
+# 1. .env に各 API キーを設定
+nano /var/www/ai-web-marketer/.env
+
+# 2. PM2 に環境変数反映
+sudo -u root pm2 reload marketer-api --update-env
+
+# 3. .env から tenant_credentials へ一括コピー登録
+cd /var/www/ai-web-marketer/backend
+.venv/bin/python -m scripts.register_llm_credentials \
+    --tenant-id <テナント UUID>
+```
+
+### 13.5.2 バックアップの注意
+
+`backup.sh` は **postgres スーパーユーザーで pg_dump を実行する**こと。
+marketer ロールは `FORCE ROW LEVEL SECURITY` 配下のテーブルで pg_dump が
+QUERY FAILED を起こし、不完全ダンプが生成される。
+
+cron は **pfkbn172 ユーザーの crontab** に登録し、ファイル所有権を統一する
+(/var/backups/marketer は pfkbn172:pfkbn172 / 700 想定)。
+
+リストア検証手順:
+```bash
+pg_restore -l /var/backups/marketer/marketer_daily_<曜日>.dump | head
+# テーブル DDL と DATA 行が並べば壊れていない
+```
+
+### 13.5.3 Gemini Grounding の URL ラッパー対応
+
+Gemini API の Grounding は引用 URL を `vertexaisearch.cloud.google.com/grounding-api-redirect/...`
+ラッパー形式で返す。`gemini_client._resolve_wrapper_urls()` で HEAD/GET により
+実 URL を取得 →(失敗時)`grounding_chunks[].web.domain` ヒントで合成 URL 生成、
+というフォールバックを実装済み。HEAD 結果はクエリ単位でキャッシュし重複呼出しを抑制。
+
+---
+
 ## 14. 次の確認事項(キセに判断を求めること)
 
 設計確定済み。**実装着手前にキセの最終 OK が欲しい論点**:
