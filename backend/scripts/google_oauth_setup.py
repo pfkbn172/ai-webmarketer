@@ -1,6 +1,15 @@
 """Google OAuth 認可フロー(GSC / GA4 共通)を CLI で実行し、refresh_token を取得して
 tenant_credentials に Fernet 暗号化保存する。
 
+ヘッドレス VPS で実行する前提で、open_browser=False を固定し、認可 URL を
+標準出力に print してから run_local_server を起動する。
+
+事前準備:
+    1. ローカル PC から SSH トンネル付きで VPS に接続:
+           ssh -L 8765:localhost:8765 root@<VPS-IP>
+    2. GCP の OAuth 同意画面で `pfkbn172@gmail.com` をテストユーザーに追加
+    3. Search Console API / Google Analytics Data API を有効化
+
 使い方:
     cd backend
     # GSC: site_url を必ず指定する
@@ -19,7 +28,11 @@ tenant_credentials に Fernet 暗号化保存する。
         --scopes https://www.googleapis.com/auth/analytics.readonly \
         --property-id 123456789
 
-GCP コンソールで作成した OAuth 2.0 Client ID(Desktop タイプ)の JSON ファイルを渡す。
+実行すると認可 URL が表示されるので、ローカル PC のブラウザで開いて認可する。
+SSH トンネル経由でコールバックが http://localhost:8765 に届き、refresh_token が
+保管されてスクリプトが終了する。
+
+GCP コンソールで作成した OAuth 2.0 Client ID(Desktop タイプ)の JSON を渡す。
 """
 
 import argparse
@@ -82,7 +95,33 @@ async def main() -> int:
     flow = InstalledAppFlow.from_client_secrets_file(
         str(args.client_secret_json), scopes=args.scopes
     )
-    creds = flow.run_local_server(port=args.port, prompt="consent", access_type="offline")
+
+    # ヘッドレス VPS で実行することを前提に、open_browser=False で固定し、
+    # 認可 URL は run_local_server に入る前に明示的に表示する。
+    # SSH トンネル(ssh -L 8765:localhost:8765 …)経由でローカル PC のブラウザから
+    # http://localhost:8765 にコールバックが届く設計。
+    flow.redirect_uri = f"http://localhost:{args.port}"
+    auth_url, _ = flow.authorization_url(
+        access_type="offline",
+        prompt="consent",
+        include_granted_scopes="false",
+    )
+    print()
+    print("=" * 70)
+    print("以下の URL をローカル PC のブラウザで開き、認可してください:")
+    print()
+    print(auth_url)
+    print()
+    print(f"(SSH トンネル: ssh -L {args.port}:localhost:{args.port} root@<VPS> を維持すること)")
+    print("=" * 70)
+    print()
+
+    creds = flow.run_local_server(
+        port=args.port,
+        prompt="consent",
+        access_type="offline",
+        open_browser=False,
+    )
 
     if not creds.refresh_token:
         print(
