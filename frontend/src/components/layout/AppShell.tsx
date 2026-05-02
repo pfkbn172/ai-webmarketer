@@ -8,6 +8,7 @@ const NAV = [
   { to: '/', label: 'ダッシュボード', exact: true },
   { to: '/queries', label: 'ターゲットクエリ' },
   { to: '/citations', label: 'AI 引用モニタ' },
+  { to: '/manual', label: 'マニュアル' },
 ];
 
 export default function AppShell() {

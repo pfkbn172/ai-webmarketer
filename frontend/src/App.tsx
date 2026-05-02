@@ -6,6 +6,7 @@ import RequireAuth from '@/components/layout/RequireAuth';
 import CitationMonitorPage from '@/pages/CitationMonitorPage';
 import DashboardPage from '@/pages/DashboardPage';
 import LoginPage from '@/pages/LoginPage';
+import ManualPage from '@/pages/ManualPage';
 import TargetQueriesPage from '@/pages/TargetQueriesPage';
 
 const queryClient = new QueryClient({
@@ -28,6 +29,7 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="queries" element={<TargetQueriesPage />} />
             <Route path="citations" element={<CitationMonitorPage />} />
+            <Route path="manual" element={<ManualPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
