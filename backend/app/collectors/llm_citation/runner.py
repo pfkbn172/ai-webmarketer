@@ -203,6 +203,10 @@ async def _build_clients(
     ):
         clients[LLMProviderEnum.gemini] = GeminiCitationClient(key)
 
+    # AIO: SerpApi キーがあれば SerpApi を使う、無ければスキップ。
+    # 自前 Headless Chromium 案(aio_headless_client.py)は VPS の IP がデータセンタ
+    # 帯のため Google Bot Detection に阻まれて実用にならず棚に置いている
+    # (将来の検討は docs/implementation_plan.md 13.5.4 を参照)。
     if key := await _resolve_api_key(
         repo, tenant_id, CredentialProviderEnum.serpapi, "serpapi_key"
     ):

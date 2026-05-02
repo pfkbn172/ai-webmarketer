@@ -265,7 +265,11 @@ const SECTIONS: Section[] = [
           <li>テナントは 1 つ(自社のみ)</li>
           <li>ターゲットクエリは <b>20 本まで</b></li>
           <li>AI Provider は <b>Gemini のみ</b>(他 LLM は API キー契約後に追加可能)</li>
-          <li>AI Overviews(SerpApi)は別途契約が必要($75/月〜)</li>
+          <li>
+            AI Overviews 取得は <b>SerpApi 契約必須</b>($75/月〜)。中長期は
+            DataForSEO への切替で月 $0.05〜10 に圧縮予定。Phase 1 では未契約のため
+            「AI 引用モニタ」画面の <code>aio</code> 列は <code>—</code> 表示
+          </li>
         </ul>
 
         <h3 className="mt-4 font-semibold">Gemini Free Tier の制約</h3>

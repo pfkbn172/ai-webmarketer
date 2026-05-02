@@ -1227,6 +1227,40 @@ Gemini API の Grounding は引用 URL を `vertexaisearch.cloud.google.com/grou
 実 URL を取得 →(失敗時)`grounding_chunks[].web.domain` ヒントで合成 URL 生成、
 というフォールバックを実装済み。HEAD 結果はクエリ単位でキャッシュし重複呼出しを抑制。
 
+### 13.5.4 AI Overviews 取得の選択肢と現状(検証メモ)
+
+仕様書 4.1.3 / 16 章で「SerpApi / DataForSEO / 自前 Headless スクレイピング」
+の 3 系統を抽象化レイヤで持つ方針だが、Phase 1 自社運用で各案を検証した結果は
+以下の通り。
+
+| 案 | 月額 | 規約 | 安定性 | 現状 |
+|---|---|---|---|---|
+| **SerpApi** | $75〜 | ✅ 公式 | ✅ 安定 | 推奨だが高い |
+| **DataForSEO** | ~$0.05〜10 | ✅ 公式 | ✅ 安定 | **中長期最有力** |
+| **自前 Headless Chromium** | $0 | ⚠️ Google ToS グレー | ❌ Bot 検知で実用不可 | 棚上げ |
+
+**自前 Headless 検証結果**: VPS の ConoHa データセンタ IP から Playwright で
+`www.google.com` に検索クエリを投げると、即 `google.com/sorry/index` にリダイレクト
+され Bot 検知メッセージ「お使いのコンピュータ ネットワークから通常と異なる
+トラフィックが検出されました」が表示される。`navigator.webdriver` 偽装、
+リアルな User-Agent / locale / timezone 指定では突破不可能。Google は IP の
+ASN(自律システム番号)で「データセンタ帯」を識別しており、住宅 IP プロキシ
+無しには対応困難。
+
+**実装は `app/collectors/llm_citation/aio_headless_client.py` として残置**
+(将来的に住宅 IP プロキシや別環境で動かす可能性を見越して)、
+`runner.py` からは呼び出さない構成にしている。
+
+**Phase 1 の AIO 運用**:
+- SerpApi キー登録あり → SerpApi 経由で AIO 取得
+- キー登録なし → AIO 列はスキップ(citation_logs に行を作らない)、
+  ダッシュボードでも `—` 表示
+
+**Phase 2 以降の改善方針**:
+1. DataForSEO 契約 → `aio_client.py` と同パターンで Adapter 1 ファイル追加
+2. SerpApi/DataForSEO どちらでも切替可能に(tenant_credentials 設定で選択)
+3. Headless 案は完全に廃止するか、住宅 IP 契約とセットで再検討
+
 ---
 
 ## 14. 次の確認事項(キセに判断を求めること)
