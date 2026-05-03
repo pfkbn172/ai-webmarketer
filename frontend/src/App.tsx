@@ -10,6 +10,7 @@ import InquiriesPage from '@/pages/InquiriesPage';
 import LoginPage from '@/pages/LoginPage';
 import ManualPage from '@/pages/ManualPage';
 import SettingsPage from '@/pages/SettingsPage';
+import StrategicReviewPage from '@/pages/StrategicReviewPage';
 import TargetQueriesPage from '@/pages/TargetQueriesPage';
 
 const queryClient = new QueryClient({
@@ -30,6 +31,7 @@ export default function App() {
             }
           >
             <Route index element={<DashboardPage />} />
+            <Route path="strategic" element={<StrategicReviewPage />} />
             <Route path="queries" element={<TargetQueriesPage />} />
             <Route path="citations" element={<CitationMonitorPage />} />
             <Route path="citations/manual" element={<CitationManualPage />} />

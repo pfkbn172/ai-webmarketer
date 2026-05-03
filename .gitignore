@@ -61,3 +61,4 @@ backups/
 # --- Misc ---
 tmp/
 .tmp/
+backend/test-results/

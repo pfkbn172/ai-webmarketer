@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.api.v1 import (
     auth,
     author_profiles,
+    business_context,
     citation_logs,
     citation_manual,
     competitors,
@@ -11,6 +12,7 @@ from app.api.v1 import (
     health,
     inquiries,
     kpi,
+    strategic,
     target_queries,
     tenants,
 )
@@ -24,7 +26,7 @@ configure_logging()
 
 app = FastAPI(
     title="AIウェブマーケター API",
-    version="0.1.0",
+    version="0.2.0",
     docs_url="/api/docs" if settings.env != "production" else None,
     redoc_url=None,
     openapi_url="/api/openapi.json" if settings.env != "production" else None,
@@ -32,7 +34,6 @@ app = FastAPI(
 
 app.add_middleware(AuthMiddleware)
 
-# Nginx が /marketer/api/ → 127.0.0.1:3009/api/ にプロキシする想定。
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(tenants.router, prefix="/api/v1")
@@ -45,6 +46,8 @@ app.include_router(author_profiles.router, prefix="/api/v1")
 app.include_router(competitors.router, prefix="/api/v1")
 app.include_router(credentials.router, prefix="/api/v1")
 app.include_router(inquiries.router, prefix="/api/v1")
+app.include_router(business_context.router, prefix="/api/v1")
+app.include_router(strategic.router, prefix="/api/v1")
 
 # Webhook(認証不要、テナント ID は URL に含める)
 app.include_router(wh_wordpress.router, prefix="/webhook")

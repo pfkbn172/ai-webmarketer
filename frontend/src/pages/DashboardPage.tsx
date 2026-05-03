@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
   CartesianGrid,
   Line,
@@ -10,6 +11,7 @@ import {
 } from 'recharts';
 
 import { fetchKpiSummary, type KpiSummary } from '@/api/kpi';
+import { fetchAnomalies, type Anomaly } from '@/api/strategic';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 
 function KpiCard({
@@ -34,24 +36,50 @@ function KpiCard({
   );
 }
 
+function AnomalyBanner() {
+  const { data = [] } = useQuery({
+    queryKey: ['strategic', 'anomalies'],
+    queryFn: fetchAnomalies,
+  });
+  const high = data.filter((a: Anomaly) => a.severity === 'high');
+  if (high.length === 0) return null;
+  return (
+    <Card className="border-destructive/50 bg-destructive/5">
+      <CardContent className="pt-6">
+        <div className="flex items-start gap-3">
+          <span className="rounded bg-destructive px-2 py-1 text-xs text-destructive-foreground">
+            ⚠ {high.length} 件の違和感
+          </span>
+          <div className="flex-1 space-y-1">
+            {high.slice(0, 3).map((a: Anomaly, i: number) => (
+              <p key={i} className="text-sm">
+                <b>{a.kind}</b>: {a.detail}
+              </p>
+            ))}
+            <Link to="/strategic" className="text-xs text-primary hover:underline">
+              戦略レビュー画面で確認 →
+            </Link>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
   const { data, isPending, error } = useQuery<KpiSummary, Error>({
     queryKey: ['kpi', 'summary', 30],
     queryFn: () => fetchKpiSummary(30),
   });
 
-  // ラベルは「集計対象として要求した期間」を表す(API レスポンスの period_days)
-  // 実データがそれ未満でも「過去 30 日」と表示し続けるのがユーザーの期待に近い。
   const periodHint = data ? `過去 ${data.period_days} 日` : '過去 30 日';
 
   return (
     <div className="space-y-6">
+      <AnomalyBanner />
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          label="AI 引用回数"
-          value={data?.ai_citation_count ?? '—'}
-          hint={periodHint}
-        />
+        <KpiCard label="AI 引用回数" value={data?.ai_citation_count ?? '—'} hint={periodHint} />
         <KpiCard
           label="オーガニックセッション"
           value={data?.sessions ?? '—'}

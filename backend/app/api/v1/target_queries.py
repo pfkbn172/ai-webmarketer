@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_engine.usecases.query_suggestion import suggest_queries
 from app.api.deps import require_tenant_id
 from app.db.base import get_db_session
 from app.db.models.target_query import TargetQuery
@@ -111,3 +112,69 @@ def _row_dict(r: TargetQuery) -> dict:
         "search_intent": r.search_intent,
         "is_active": r.is_active,
     }
+
+
+class QuerySuggestion(BaseModel):
+    query_text: str
+    cluster_id: str | None = None
+    priority: int = 3
+    expected_conversion: int = 3
+    search_intent: str | None = None
+    reasoning: str | None = None
+
+
+@router.post("/suggest", response_model=list[QuerySuggestion])
+async def suggest_with_ai(
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[QuerySuggestion]:
+    """business_context と既存クエリを踏まえて AI に提案させる。"""
+    await _set_ctx(session, tenant_id)
+    suggestions = await suggest_queries(session, tenant_id)
+    out: list[QuerySuggestion] = []
+    for s in suggestions:
+        try:
+            out.append(QuerySuggestion(**s))
+        except Exception:
+            continue
+    return out
+
+
+class BulkAdoptIn(BaseModel):
+    queries: list[QuerySuggestion]
+
+
+@router.post("/bulk-adopt", response_model=list[TargetQueryOut])
+async def bulk_adopt(
+    body: BulkAdoptIn,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[TargetQueryOut]:
+    """AI 提案クエリを一括採用。既存クエリと重複するものはスキップ。"""
+    await _set_ctx(session, tenant_id)
+    existing = {
+        r.query_text
+        for r in (
+            await session.scalars(
+                select(TargetQuery).where(TargetQuery.tenant_id == tenant_id)
+            )
+        ).all()
+    }
+    created: list[TargetQueryOut] = []
+    for q in body.queries:
+        if q.query_text in existing:
+            continue
+        row = TargetQuery(
+            tenant_id=tenant_id,
+            query_text=q.query_text,
+            cluster_id=q.cluster_id,
+            priority=q.priority,
+            expected_conversion=q.expected_conversion,
+            search_intent=q.search_intent,
+            is_active=True,
+        )
+        session.add(row)
+        await session.flush()
+        created.append(TargetQueryOut(**_row_dict(row)))
+    await session.commit()
+    return created

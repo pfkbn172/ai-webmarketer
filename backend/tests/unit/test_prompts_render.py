@@ -9,12 +9,23 @@ def test_monthly_report_renders() -> None:
         {
             "tenant_name": "kiseeeen",
             "period": "2026-04",
+            "industry": "SaaS",
+            "stage": "solo",
+            "geographic_base": "天王寺区",
+            "geographic_expansion": "生野区",
+            "unique_value": "タイ製造業経験",
+            "primary_offerings": "IT/DX サポート",
+            "target_customer": "大阪の中小企業",
+            "weak_segments": "業種特化",
+            "strong_segments": "地域系",
             "kpi_summary": "[]",
             "citation_trend": "x",
+            "cluster_citation_breakdown": "{}",
             "citation_opportunities": "",
             "schema_coverage": "",
             "contents": "[]",
             "inquiries_summary": "",
+            "anomalies": "[]",
         },
     )
     assert "kiseeeen" in out
