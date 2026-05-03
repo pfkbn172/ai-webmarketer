@@ -1,0 +1,145 @@
+[
+  {
+    "query_text": "平野区 IT DX サポート",
+    "cluster_id": "local_district",
+    "priority": 5,
+    "expected_conversion": 5,
+    "search_intent": "地元での IT/DX サポート会社探し(既に引用実績あり)"
+  },
+  {
+    "query_text": "天王寺区 IT DX サポート",
+    "cluster_id": "local_district",
+    "priority": 5,
+    "expected_conversion": 5,
+    "search_intent": "地元での IT/DX サポート会社探し(実顧客獲得済み)"
+  },
+  {
+    "query_text": "阿倍野区 IT DX サポート",
+    "cluster_id": "local_district",
+    "priority": 4,
+    "expected_conversion": 4,
+    "search_intent": "地元での IT/DX サポート会社探し"
+  },
+  {
+    "query_text": "東住吉区 IT DX サポート",
+    "cluster_id": "local_district",
+    "priority": 4,
+    "expected_conversion": 4,
+    "search_intent": "地元での IT/DX サポート会社探し"
+  },
+  {
+    "query_text": "大阪市内 中小企業 DX サポート",
+    "cluster_id": "local_district",
+    "priority": 4,
+    "expected_conversion": 4,
+    "search_intent": "大阪市内での中小企業向け DX サポート"
+  },
+
+  {
+    "query_text": "生野区 DX サポート 中小企業",
+    "cluster_id": "local_expand",
+    "priority": 3,
+    "expected_conversion": 4,
+    "search_intent": "拡大目標地域・生野区での DX サポート"
+  },
+  {
+    "query_text": "中央区 IT サポート 中小企業",
+    "cluster_id": "local_expand",
+    "priority": 3,
+    "expected_conversion": 4,
+    "search_intent": "拡大目標地域・中央区での IT サポート"
+  },
+  {
+    "query_text": "東大阪市 DX 中小企業",
+    "cluster_id": "local_expand",
+    "priority": 3,
+    "expected_conversion": 4,
+    "search_intent": "拡大目標地域・東大阪市での DX"
+  },
+  {
+    "query_text": "八尾市 DX 中小企業",
+    "cluster_id": "local_expand",
+    "priority": 3,
+    "expected_conversion": 4,
+    "search_intent": "拡大目標地域・八尾市での DX"
+  },
+  {
+    "query_text": "浪速区 IT DX 中小企業",
+    "cluster_id": "local_expand",
+    "priority": 3,
+    "expected_conversion": 4,
+    "search_intent": "拡大目標地域・浪速区での IT DX"
+  },
+
+  {
+    "query_text": "大阪 製造業 AI 導入",
+    "cluster_id": "industry_test",
+    "priority": 2,
+    "expected_conversion": 2,
+    "search_intent": "業種特化(弱点市場)・コンテンツ拡充の効果測定用"
+  },
+  {
+    "query_text": "大阪 卸売業 AI 自動化",
+    "cluster_id": "industry_test",
+    "priority": 2,
+    "expected_conversion": 2,
+    "search_intent": "業種特化(弱点市場)・コンテンツ拡充の効果測定用"
+  },
+  {
+    "query_text": "大阪 中小企業 AI 業務活用",
+    "cluster_id": "industry_test",
+    "priority": 2,
+    "expected_conversion": 2,
+    "search_intent": "業種特化(弱点市場)・コンテンツ拡充の効果測定用"
+  },
+  {
+    "query_text": "大阪 中小製造業 IoT",
+    "cluster_id": "industry_test",
+    "priority": 2,
+    "expected_conversion": 2,
+    "search_intent": "業種特化(弱点市場)・コンテンツ拡充の効果測定用"
+  },
+  {
+    "query_text": "関西 製造業 DX",
+    "cluster_id": "industry_test",
+    "priority": 2,
+    "expected_conversion": 2,
+    "search_intent": "業種特化(弱点市場)・コンテンツ拡充の効果測定用"
+  },
+
+  {
+    "query_text": "大阪 DX コンサル 比較",
+    "cluster_id": "competitive",
+    "priority": 2,
+    "expected_conversion": 2,
+    "search_intent": "比較・競合観測(誰が引用されているかを継続観察)"
+  },
+  {
+    "query_text": "平野区 DX 比較",
+    "cluster_id": "competitive",
+    "priority": 3,
+    "expected_conversion": 3,
+    "search_intent": "比較・競合観測(地元での比較検討段階)"
+  },
+  {
+    "query_text": "大阪 中小企業 AI コンサル 比較",
+    "cluster_id": "competitive",
+    "priority": 2,
+    "expected_conversion": 2,
+    "search_intent": "比較・競合観測"
+  },
+  {
+    "query_text": "大阪 IT コンサル おすすめ",
+    "cluster_id": "competitive",
+    "priority": 2,
+    "expected_conversion": 2,
+    "search_intent": "比較・競合観測(おすすめ系クエリ)"
+  },
+  {
+    "query_text": "大阪 DX サポート おすすめ",
+    "cluster_id": "competitive",
+    "priority": 2,
+    "expected_conversion": 2,
+    "search_intent": "比較・競合観測(おすすめ系クエリ)"
+  }
+]
