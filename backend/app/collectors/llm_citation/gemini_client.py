@@ -32,7 +32,21 @@ WRAPPER_HOST = "vertexaisearch.cloud.google.com"
 
 
 class GeminiCitationClient:
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash") -> None:
+    """引用モニタ用 Gemini クライアント。
+
+    モデルのデフォルトは gemini-2.5-flash-lite。理由:
+    - Gemini Free Tier の RPD(1 日あたりリクエスト数)が 2.5 Flash だと 20 件しかなく、
+      週次 20 クエリのモニタで即枠切れになる
+    - 2.5 Flash-Lite は同 Free Tier で RPD ~1000(2026-05 時点)あり、引用モニタの
+      用途(クエリ → Web 検索 → 回答 + 引用 URL を取得)には品質十分
+    - AI 処理用(月次レポート / コンテンツドラフト等)は品質要件が高いため、
+      ai_engine/providers/gemini_adapter.py の方は 2.5 Flash のまま維持する
+
+    課金プラン(Tier 1+)に切り替えた場合は model 引数で 2.5 Flash や 2.5 Pro を
+    渡せば即切替可能。
+    """
+
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash-lite") -> None:
         self._client = genai.Client(api_key=api_key)
         self._model = model
 
