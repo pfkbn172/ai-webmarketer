@@ -4,12 +4,12 @@
 冒頭定義文・表・FAQ・E-E-A-T シグナル・地域具体性・独自性活用 の 6 観点。
 """
 
-import json
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_engine.json_parse import parse_json_object
 from app.ai_engine.providers.factory import AIProviderFactory
 from app.ai_engine.template_loader import render
 from app.db.models.content import Content
@@ -70,8 +70,4 @@ async def improve_content(
         content_id=str(content_id),
         tokens=res.usage.total_tokens,
     )
-    try:
-        return json.loads(res.text)
-    except json.JSONDecodeError:
-        log.warning("content_improvement_invalid_json", raw=res.text[:200])
-        return {}
+    return parse_json_object(res.text, log_label="content_improvement_json")

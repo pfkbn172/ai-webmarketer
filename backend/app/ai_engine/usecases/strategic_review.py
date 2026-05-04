@@ -29,6 +29,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_engine.json_parse import parse_json_object
 from app.ai_engine.providers.factory import AIProviderFactory
 from app.db.models.citation_log import CitationLog
 from app.db.models.enums import AIUseCaseEnum
@@ -131,7 +132,7 @@ async def run_strategic_review(
         system_prompt="あなたは事業実態を踏まえる戦略コンサルタントです。",
         user_prompt=prompt,
         response_format="json",
-        max_tokens=2500,
+        max_tokens=4000,
         temperature=0.3,
     )
     log.info(
@@ -139,8 +140,4 @@ async def run_strategic_review(
         tenant_id=str(tenant_id),
         tokens=res.usage.total_tokens,
     )
-    try:
-        return json.loads(res.text)
-    except json.JSONDecodeError:
-        log.warning("strategic_review_invalid_json", raw=res.text[:200])
-        return {}
+    return parse_json_object(res.text, log_label="strategic_review_json")

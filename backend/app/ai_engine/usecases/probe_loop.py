@@ -15,12 +15,12 @@
 }
 """
 
-import json
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_engine.json_parse import parse_json_object
 from app.ai_engine.providers.factory import AIProviderFactory
 from app.db.models.enums import AIUseCaseEnum
 from app.db.models.tenant import Tenant
@@ -100,14 +100,10 @@ async def compare_strategy_axes(
         system_prompt="あなたは事業文脈を踏まえた戦略思考のプロです。",
         user_prompt=prompt,
         response_format="json",
-        max_tokens=2000,
+        max_tokens=4000,
         temperature=0.3,
     )
     log.info(
         "probe_loop_done", tenant_id=str(tenant_id), tokens=res.usage.total_tokens
     )
-    try:
-        return json.loads(res.text)
-    except json.JSONDecodeError:
-        log.warning("probe_loop_invalid_json", raw=res.text[:200])
-        return {}
+    return parse_json_object(res.text, log_label="probe_loop_json")
