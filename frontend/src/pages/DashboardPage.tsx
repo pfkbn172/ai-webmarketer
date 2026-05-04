@@ -311,16 +311,16 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function ChannelBlock() {
+function ChannelBlock({ days }: { days: number }) {
   const { data = [], isPending } = useQuery({
-    queryKey: ['dashboard', 'channels'],
-    queryFn: fetchChannelBreakdown,
+    queryKey: ['dashboard', 'channels', days],
+    queryFn: () => fetchChannelBreakdown(days),
   });
   const total = data.reduce((s, d) => s + d.sessions, 0);
   return (
     <Card>
       <CardHeader>
-        <CardTitle>流入経路(過去 30 日)</CardTitle>
+        <CardTitle>流入経路(過去 {days} 日)</CardTitle>
       </CardHeader>
       <CardContent>
         {isPending ? (
@@ -355,16 +355,16 @@ function ChannelBlock() {
   );
 }
 
-function AiReferralsBlock() {
+function AiReferralsBlock({ days }: { days: number }) {
   const { data = [], isPending } = useQuery({
-    queryKey: ['dashboard', 'ai-referrals'],
-    queryFn: () => fetchAiReferrals(30),
+    queryKey: ['dashboard', 'ai-referrals', days],
+    queryFn: () => fetchAiReferrals(days),
   });
   const total = data.reduce((s, d) => s + d.sessions, 0);
   return (
     <Card>
       <CardHeader>
-        <CardTitle>AI 経由の流入(過去 30 日)</CardTitle>
+        <CardTitle>AI 経由の流入(過去 {days} 日)</CardTitle>
       </CardHeader>
       <CardContent>
         {isPending ? (
@@ -404,10 +404,10 @@ function AiReferralsBlock() {
   );
 }
 
-function ClusterCitationBlock() {
+function ClusterCitationBlock({ days }: { days: number }) {
   const { data = [], isPending } = useQuery({
-    queryKey: ['dashboard', 'cluster-citation'],
-    queryFn: fetchClusterCitation,
+    queryKey: ['dashboard', 'cluster-citation', days],
+    queryFn: () => fetchClusterCitation(days),
   });
   return (
     <Card>
@@ -446,15 +446,15 @@ function ClusterCitationBlock() {
   );
 }
 
-function HeatmapBlock() {
+function HeatmapBlock({ days }: { days: number }) {
   const { data = [], isPending } = useQuery({
-    queryKey: ['dashboard', 'heatmap'],
-    queryFn: () => fetchHeatmap(5),
+    queryKey: ['dashboard', 'heatmap', days],
+    queryFn: () => fetchHeatmap(days, 5),
   });
   return (
     <Card>
       <CardHeader>
-        <CardTitle>AI 引用ヒートマップ(主要 5 クエリ × LLM)</CardTitle>
+        <CardTitle>AI 引用ヒートマップ(主要 5 クエリ × LLM、過去 {days} 日)</CardTitle>
       </CardHeader>
       <CardContent>
         {isPending ? (
@@ -520,15 +520,15 @@ function HeatmapBlock() {
   );
 }
 
-function TopQueriesBlock() {
+function TopQueriesBlock({ days }: { days: number }) {
   const { data = [], isPending } = useQuery({
-    queryKey: ['dashboard', 'top-queries'],
-    queryFn: () => fetchTopQueries(10),
+    queryKey: ['dashboard', 'top-queries', days],
+    queryFn: () => fetchTopQueries(days, 10),
   });
   return (
     <Card>
       <CardHeader>
-        <CardTitle>主要クエリ TOP 10(GSC)</CardTitle>
+        <CardTitle>主要クエリ TOP 10(GSC、過去 {days} 日)</CardTitle>
       </CardHeader>
       <CardContent>
         {isPending ? (
@@ -568,10 +568,10 @@ function TopQueriesBlock() {
   );
 }
 
-function CompetitorTopBlock() {
+function CompetitorTopBlock({ days }: { days: number }) {
   const { data = [], isPending } = useQuery({
-    queryKey: ['dashboard', 'competitor-top'],
-    queryFn: fetchCompetitorPatternsTop,
+    queryKey: ['dashboard', 'competitor-top', days],
+    queryFn: () => fetchCompetitorPatternsTop(days),
   });
   return (
     <Card>
@@ -716,15 +716,15 @@ function NextActionsBlock() {
   );
 }
 
-function PagePerformanceBlock() {
+function PagePerformanceBlock({ days }: { days: number }) {
   const { data = [], isPending } = useQuery({
-    queryKey: ['dashboard', 'page-performance'],
-    queryFn: () => fetchPagePerformance(30, 20),
+    queryKey: ['dashboard', 'page-performance', days],
+    queryFn: () => fetchPagePerformance(days, 20),
   });
   return (
     <Card>
       <CardHeader>
-        <CardTitle>記事/ページ別パフォーマンス TOP 20(過去 30 日)</CardTitle>
+        <CardTitle>記事/ページ別パフォーマンス TOP 20(過去 {days} 日)</CardTitle>
       </CardHeader>
       <CardContent>
         {isPending ? (
@@ -773,15 +773,17 @@ function PagePerformanceBlock() {
   );
 }
 
-function FunnelBlock() {
+function FunnelBlock({ days }: { days: number }) {
+  // 漏斗は短期間だと数字が出にくいので、最低 30 日は確保
+  const effective = Math.max(days, 30);
   const { data, isPending } = useQuery({
-    queryKey: ['dashboard', 'funnel'],
-    queryFn: () => fetchFunnel(90),
+    queryKey: ['dashboard', 'funnel', effective],
+    queryFn: () => fetchFunnel(effective),
   });
   return (
     <Card>
       <CardHeader>
-        <CardTitle>コンバージョン漏斗(過去 90 日)</CardTitle>
+        <CardTitle>コンバージョン漏斗(過去 {effective} 日)</CardTitle>
       </CardHeader>
       <CardContent>
         {isPending ? (
@@ -848,10 +850,10 @@ const ACTION_BG: Record<string, string> = {
   monitor: 'bg-muted text-muted-foreground',
 };
 
-function KeywordOpportunityBlock() {
+function KeywordOpportunityBlock({ days }: { days: number }) {
   const { data = [], isPending } = useQuery({
-    queryKey: ['dashboard', 'keyword-opportunity'],
-    queryFn: () => fetchKeywordOpportunity(30, 30),
+    queryKey: ['dashboard', 'keyword-opportunity', days],
+    queryFn: () => fetchKeywordOpportunity(days, 30),
   });
   return (
     <Card>
@@ -904,15 +906,15 @@ function KeywordOpportunityBlock() {
   );
 }
 
-function CompetitorContentBlock() {
+function CompetitorContentBlock({ days }: { days: number }) {
   const { data = [], isPending } = useQuery({
-    queryKey: ['dashboard', 'competitor-content'],
-    queryFn: () => fetchCompetitorContent(30, 20),
+    queryKey: ['dashboard', 'competitor-content', days],
+    queryFn: () => fetchCompetitorContent(days, 20),
   });
   return (
     <Card>
       <CardHeader>
-        <CardTitle>競合に引用された記事 TOP 20(過去 30 日)</CardTitle>
+        <CardTitle>競合に引用された記事 TOP 20(過去 {days} 日)</CardTitle>
       </CardHeader>
       <CardContent>
         {isPending ? (
@@ -1167,13 +1169,22 @@ function ReportsBlock() {
   );
 }
 
+const PERIOD_OPTIONS = [
+  { value: 7, label: '過去 7 日' },
+  { value: 30, label: '過去 30 日' },
+  { value: 90, label: '過去 90 日' },
+  { value: 180, label: '過去 180 日' },
+  { value: 365, label: '過去 365 日' },
+];
+
 export default function DashboardPage() {
+  const [days, setDays] = useState<number>(30);
   const { data, isPending, error } = useQuery<KpiSummary, Error>({
-    queryKey: ['kpi', 'summary', 30],
-    queryFn: () => fetchKpiSummary(30),
+    queryKey: ['kpi', 'summary', days],
+    queryFn: () => fetchKpiSummary(days),
   });
 
-  const periodHint = data ? `過去 ${data.period_days} 日` : '過去 30 日';
+  const periodHint = data ? `過去 ${data.period_days} 日` : `過去 ${days} 日`;
 
   const overview = (
     <div className="space-y-6">
@@ -1284,9 +1295,9 @@ export default function DashboardPage() {
       </Card>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <ChannelBlock />
-        <AiReferralsBlock />
-        <ClusterCitationBlock />
+        <ChannelBlock days={days} />
+        <AiReferralsBlock days={days} />
+        <ClusterCitationBlock days={days} />
       </div>
 
       <NextActionsBlock />
@@ -1295,23 +1306,23 @@ export default function DashboardPage() {
 
   const contentTab = (
     <div className="space-y-6">
-      <PagePerformanceBlock />
-      <FunnelBlock />
+      <PagePerformanceBlock days={days} />
+      <FunnelBlock days={days} />
     </div>
   );
 
   const keywordTab = (
     <div className="space-y-6">
-      <HeatmapBlock />
-      <KeywordOpportunityBlock />
-      <TopQueriesBlock />
+      <HeatmapBlock days={days} />
+      <KeywordOpportunityBlock days={days} />
+      <TopQueriesBlock days={days} />
     </div>
   );
 
   const competitorTab = (
     <div className="space-y-6">
-      <CompetitorTopBlock />
-      <CompetitorContentBlock />
+      <CompetitorTopBlock days={days} />
+      <CompetitorContentBlock days={days} />
     </div>
   );
 
@@ -1325,6 +1336,24 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <AnomalyBanner />
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">ダッシュボード</h1>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">期間</span>
+          <select
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value))}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            aria-label="期間"
+          >
+            {PERIOD_OPTIONS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
       <Tabs
         defaultId="overview"
         tabs={[

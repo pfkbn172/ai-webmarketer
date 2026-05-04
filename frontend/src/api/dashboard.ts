@@ -87,19 +87,33 @@ export type AlertRule = {
   enabled: boolean;
 };
 
-export async function fetchClusterCitation(): Promise<ClusterCitation[]> {
-  return (await apiClient.get<ClusterCitation[]>('/dashboard/cluster-citation')).data;
+export async function fetchClusterCitation(days = 30): Promise<ClusterCitation[]> {
+  return (
+    await apiClient.get<ClusterCitation[]>('/dashboard/cluster-citation', {
+      params: { days },
+    })
+  ).data;
 }
-export async function fetchTopQueries(limit = 10): Promise<TopQueryRow[]> {
-  return (await apiClient.get<TopQueryRow[]>('/dashboard/top-queries', { params: { limit } }))
-    .data;
+export async function fetchTopQueries(days = 30, limit = 10): Promise<TopQueryRow[]> {
+  return (
+    await apiClient.get<TopQueryRow[]>('/dashboard/top-queries', {
+      params: { days, limit },
+    })
+  ).data;
 }
-export async function fetchHeatmap(limit = 5): Promise<HeatmapRow[]> {
-  return (await apiClient.get<HeatmapRow[]>('/dashboard/citation-heatmap', { params: { limit } }))
-    .data;
+export async function fetchHeatmap(days = 28, limit = 5): Promise<HeatmapRow[]> {
+  return (
+    await apiClient.get<HeatmapRow[]>('/dashboard/citation-heatmap', {
+      params: { days, limit },
+    })
+  ).data;
 }
-export async function fetchChannelBreakdown(): Promise<ChannelBreakdown[]> {
-  return (await apiClient.get<ChannelBreakdown[]>('/dashboard/channel-breakdown')).data;
+export async function fetchChannelBreakdown(days = 30): Promise<ChannelBreakdown[]> {
+  return (
+    await apiClient.get<ChannelBreakdown[]>('/dashboard/channel-breakdown', {
+      params: { days },
+    })
+  ).data;
 }
 export async function fetchNextActions(): Promise<NextAction[]> {
   return (await apiClient.get<NextAction[]>('/dashboard/next-actions')).data;
@@ -121,9 +135,13 @@ export async function upsertObjectives(payload: {
 }): Promise<Objective[]> {
   return (await apiClient.put<Objective[]>('/dashboard/objectives', payload)).data;
 }
-export async function fetchCompetitorPatternsTop(): Promise<CompetitorPatternMini[]> {
+export async function fetchCompetitorPatternsTop(
+  days = 30,
+): Promise<CompetitorPatternMini[]> {
   return (
-    await apiClient.get<CompetitorPatternMini[]>('/dashboard/competitor-patterns-top')
+    await apiClient.get<CompetitorPatternMini[]>('/dashboard/competitor-patterns-top', {
+      params: { days },
+    })
   ).data;
 }
 export async function fetchAiReferrals(days = 30): Promise<AiReferralRow[]> {
