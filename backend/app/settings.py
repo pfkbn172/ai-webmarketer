@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     mail_from: str = Field(default="marketer@kiseeeen.co.jp")
     mail_notify_to: str = Field(default="")
 
+    # SMTP リレー(Gmail 等経由のメール送信)
+    smtp_host: str = Field(default="")
+    smtp_port: int = Field(default=587)
+    smtp_user: str = Field(default="")
+    smtp_password: str = Field(default="")
+    # メール送信バックエンド: "smtp" / "resend" / "auto"(SMTP 設定優先 → Resend → 何もしない)
+    mail_backend: str = Field(default="auto")
+
     # ジョブ実行対象テナント(カンマ区切り UUID 一覧)
     # Phase 1: tenants テーブルが RLS で守られているためスケジューラから列挙できない。
     # 環境変数で運用対象を明示する(マルチテナント時は将来 BYPASSRLS ロールに切替)。
