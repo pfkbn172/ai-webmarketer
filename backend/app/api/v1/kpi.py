@@ -51,6 +51,7 @@ class DataCoverage(BaseModel):
 
 class KpiSummaryOut(BaseModel):
     period_days: int
+    granularity: str = "day"  # 'day' | 'week' | 'month'
     ai_citation_count: int
     sessions: int
     inquiries_count: int
@@ -222,20 +223,96 @@ async def _inquiries_by_date(
     return {r.d: int(r.c or 0) for r in rows}
 
 
+def _bucket_start(d: date, granularity: str) -> date:
+    if granularity == "week":
+        # 月曜起点に正規化
+        return d - timedelta(days=d.weekday())
+    if granularity == "month":
+        return d.replace(day=1)
+    return d
+
+
+def _aggregate_series(series: list[KpiPoint], granularity: str) -> list[KpiPoint]:
+    """日次の KpiPoint を週次 / 月次にまとめる。MA と is_anomaly は再計算する。"""
+    if granularity == "day" or not series:
+        return series
+    buckets: dict[date, dict] = {}
+    order: list[date] = []
+    for p in series:
+        bs = _bucket_start(p.date, granularity)
+        if bs not in buckets:
+            buckets[bs] = {"sessions": 0, "ai": 0, "inq": 0}
+            order.append(bs)
+        buckets[bs]["sessions"] += p.sessions or 0
+        buckets[bs]["ai"] += p.ai_citation_count or 0
+        buckets[bs]["inq"] += p.inquiries_count or 0
+    # 集約後は MA / 異常値を再計算(window=4 weeks or 3 months 相当)
+    sessions_arr = [buckets[d]["sessions"] for d in order]
+    out: list[KpiPoint] = []
+    win = 4 if granularity == "week" else 3
+    for i, d in enumerate(order):
+        ma: float | None = None
+        anomaly = False
+        if i >= win - 1:
+            window = sessions_arr[i - (win - 1) : i + 1]
+            ma = round(sum(window) / win, 1)
+            try:
+                sd = statistics.stdev(window)
+                if sd > 0:
+                    z = abs((sessions_arr[i] - ma) / sd)
+                    anomaly = z > 2.0
+            except statistics.StatisticsError:
+                pass
+        out.append(
+            KpiPoint(
+                date=d,
+                sessions=buckets[d]["sessions"],
+                ai_citation_count=buckets[d]["ai"],
+                inquiries_count=buckets[d]["inq"],
+                sessions_ma7=ma,
+                is_anomaly=anomaly,
+            )
+        )
+    return out
+
+
 @router.get("/summary", response_model=KpiSummaryOut)
 async def kpi_summary(
     days: int = 30,
+    start_date: date | None = None,
+    granularity: str = "auto",  # 'day' | 'week' | 'month' | 'auto'
     tenant_id: uuid.UUID = Depends(require_tenant_id),
     session: AsyncSession = Depends(get_db_session),
 ) -> KpiSummaryOut:
+    """期間指定の KPI サマリ。
+
+    - days のみ指定: 今日から N 日前まで
+    - start_date 指定: 当該日 〜 今日(days は無視)
+    - granularity 'auto': 91 日超は週次、366 日超は月次に集約
+    """
     await session.execute(
         text("SELECT set_config('app.tenant_id', :tid, true)"),
         {"tid": str(tenant_id)},
     )
     end = date.today()
-    start = end - timedelta(days=days)
+    if start_date is not None:
+        start = start_date
+        period_days = (end - start).days + 1
+    else:
+        period_days = days
+        start = end - timedelta(days=days)
+    if granularity == "auto":
+        if period_days > 366:
+            granularity = "month"
+        elif period_days > 91:
+            granularity = "week"
+        else:
+            granularity = "day"
+    if granularity not in ("day", "week", "month"):
+        granularity = "day"
+
     prev_end = start - timedelta(days=1)
-    prev_start = prev_end - timedelta(days=days - 1)
+    prev_start = prev_end - timedelta(days=period_days - 1)
     # 前年同期(うるう年は単純に 365 日引きで近似)
     yoy_end = end - timedelta(days=365)
     yoy_start = start - timedelta(days=365)
@@ -250,6 +327,7 @@ async def kpi_summary(
         citations_by_date=citations_map,
         inquiries_by_date=inquiries_map,
     )
+    series = _aggregate_series(series, granularity)
     sessions_total = sum(sessions_map.values())
     citation_total = await _count_citations(session, tenant_id, start, end)
     inq_total = await _count_inquiries(session, tenant_id, start, end)
@@ -323,7 +401,8 @@ async def kpi_summary(
     )
 
     return KpiSummaryOut(
-        period_days=days,
+        period_days=period_days,
+        granularity=granularity,
         ai_citation_count=int(citation_total),
         sessions=int(sessions_total),
         inquiries_count=int(inq_total),

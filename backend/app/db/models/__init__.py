@@ -35,6 +35,7 @@ from app.db.models.gsc_query_metric import GscQueryMetric
 from app.db.models.inquiry import Inquiry
 from app.db.models.job_execution_log import JobExecutionLog
 from app.db.models.kpi_log import KpiLog
+from app.db.models.marketing_action import MarketingAction
 from app.db.models.prompt_template import PromptTemplate
 from app.db.models.report import Report
 from app.db.models.schema_audit_log import SchemaAuditLog
@@ -71,6 +72,7 @@ __all__ = [
     "JobStatusEnum",
     "KpiLog",
     "LLMProviderEnum",
+    "MarketingAction",
     "PromptTemplate",
     "Report",
     "SchemaAuditLog",

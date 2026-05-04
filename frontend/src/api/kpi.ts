@@ -26,6 +26,7 @@ export type DataCoverage = {
 
 export type KpiSummary = {
   period_days: number;
+  granularity: 'day' | 'week' | 'month';
   ai_citation_count: number;
   sessions: number;
   inquiries_count: number;
@@ -35,7 +36,12 @@ export type KpiSummary = {
   coverage: DataCoverage;
 };
 
-export async function fetchKpiSummary(days = 30): Promise<KpiSummary> {
-  const res = await apiClient.get<KpiSummary>(`/kpi/summary`, { params: { days } });
+export async function fetchKpiSummary(
+  args: { days?: number; startDate?: string } = {},
+): Promise<KpiSummary> {
+  const params: Record<string, string | number> = {};
+  if (args.startDate) params.start_date = args.startDate;
+  else params.days = args.days ?? 30;
+  const res = await apiClient.get<KpiSummary>(`/kpi/summary`, { params });
   return res.data;
 }

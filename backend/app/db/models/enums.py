@@ -97,3 +97,14 @@ class JobStatusEnum(enum.StrEnum):
     success = "success"
     failed = "failed"
     skipped = "skipped"
+
+
+class MarketingActionCategoryEnum(enum.StrEnum):
+    """施策タイムライン用のカテゴリ。グラフ上のマーカーやレポート用の集計に使う。"""
+
+    content_publish = "content_publish"  # 記事公開
+    seo_optimize = "seo_optimize"  # SEO 改善・リライト
+    ad_campaign = "ad_campaign"  # 広告
+    pr = "pr"  # プレス・露出
+    event = "event"  # イベント・登壇
+    other = "other"

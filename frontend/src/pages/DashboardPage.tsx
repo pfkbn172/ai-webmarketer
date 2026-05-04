@@ -50,6 +50,14 @@ import {
 } from '@/api/dashboard';
 import { fetchKpiSummary, type KpiMetric, type KpiSummary } from '@/api/kpi';
 import {
+  CATEGORY_LABEL,
+  createMarketingAction,
+  deleteMarketingAction,
+  fetchMarketingActions,
+  type MarketingAction,
+  type MarketingActionCategory,
+} from '@/api/marketing_actions';
+import {
   createShareToken,
   fetchReports,
   reportPdfUrl,
@@ -106,6 +114,55 @@ function DateTick(props: { x?: number; y?: number; payload?: { value?: string } 
         </tspan>
       </text>
     </g>
+  );
+}
+
+/** トレンドグラフ用カスタム Tooltip。施策があれば一覧で表示する。 */
+function TrendTooltip(props: {
+  active?: boolean;
+  label?: string;
+  payload?: Array<{
+    name?: string;
+    value?: number | string;
+    color?: string;
+    payload?: {
+      actions?: { id: string; title: string; category: string; description: string | null }[];
+    };
+  }>;
+}) {
+  if (!props.active || !props.payload?.length) return null;
+  const data = props.payload[0]?.payload;
+  const actions = data?.actions ?? [];
+  return (
+    <div
+      className="rounded-md border border-border bg-card px-3 py-2 text-xs text-card-foreground shadow-lg"
+      style={{ minWidth: 180 }}
+    >
+      <div className="mb-1 font-semibold">{props.label}</div>
+      {props.payload
+        .filter((p) => p.name !== '施策')
+        .map((p, i) => (
+          <div key={i} className="flex justify-between gap-4">
+            <span style={{ color: p.color }}>{p.name}</span>
+            <span className="tabular-nums">{p.value}</span>
+          </div>
+        ))}
+      {actions.length > 0 && (
+        <div className="mt-2 border-t border-border pt-1">
+          <div className="mb-1 text-[10px] text-muted-foreground">施策 {actions.length} 件</div>
+          {actions.map((a) => (
+            <div key={a.id} className="mb-1">
+              <div className="font-medium" style={{ color: '#8b5cf6' }}>
+                ▲ {a.title}
+              </div>
+              {a.description && (
+                <div className="text-[10px] text-muted-foreground">{a.description}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1192,22 +1249,189 @@ function ReportsBlock() {
   );
 }
 
+function MarketingActionsBlock() {
+  const qc = useQueryClient();
+  const { data = [], isPending } = useQuery({
+    queryKey: ['marketing-actions', 'all'],
+    queryFn: () => fetchMarketingActions(),
+  });
+  const [actionDate, setActionDate] = useState<string>(
+    new Date().toISOString().slice(0, 10),
+  );
+  const [category, setCategory] = useState<MarketingActionCategory>('content_publish');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      createMarketingAction({
+        action_date: actionDate,
+        category,
+        title,
+        description: description || null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['marketing-actions'] });
+      setTitle('');
+      setDescription('');
+    },
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteMarketingAction(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['marketing-actions'] }),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>施策タイムライン</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-2 md:grid-cols-[120px_140px_1fr_auto]">
+          <Input
+            type="date"
+            value={actionDate}
+            onChange={(e) => setActionDate(e.target.value)}
+            aria-label="実施日"
+          />
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value as MarketingActionCategory)}
+            className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+            aria-label="カテゴリ"
+          >
+            {(Object.entries(CATEGORY_LABEL) as [MarketingActionCategory, string][]).map(
+              ([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ),
+            )}
+          </select>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="施策タイトル(例: TOP ページのリライト)"
+          />
+          <Button
+            size="md"
+            onClick={() => createMut.mutate()}
+            disabled={!title.trim() || createMut.isPending}
+          >
+            追加
+          </Button>
+        </div>
+        <Input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="補足(任意): 何をしたか、狙い、期待効果など"
+        />
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            まだ施策が登録されていません。上のフォームから追加してください。
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {data.map((a) => (
+              <li
+                key={a.id}
+                className="flex items-start gap-3 rounded border border-border p-2 text-sm"
+              >
+                <div className="text-xs tabular-nums text-muted-foreground" style={{ minWidth: 90 }}>
+                  {a.action_date}
+                </div>
+                <span className="rounded bg-violet-500/15 px-2 py-0.5 text-[10px] text-violet-700 dark:text-violet-300">
+                  {CATEGORY_LABEL[a.category]}
+                </span>
+                <div className="flex-1">
+                  <div className="font-medium">{a.title}</div>
+                  {a.description && (
+                    <div className="text-xs text-muted-foreground">{a.description}</div>
+                  )}
+                </div>
+                <button
+                  className="text-xs text-muted-foreground hover:text-destructive"
+                  onClick={() => deleteMut.mutate(a.id)}
+                  aria-label="削除"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const FOUNDED_DATE = '2022-08-19'; // kiseeeen 創業日(全期間表示の起点)
+
 const PERIOD_OPTIONS = [
-  { value: 7, label: '過去 7 日' },
-  { value: 30, label: '過去 30 日' },
-  { value: 90, label: '過去 90 日' },
-  { value: 180, label: '過去 180 日' },
-  { value: 365, label: '過去 365 日' },
+  { value: '7', label: '過去 7 日' },
+  { value: '30', label: '過去 30 日' },
+  { value: '90', label: '過去 90 日' },
+  { value: '180', label: '過去 180 日' },
+  { value: '365', label: '過去 365 日' },
+  { value: 'all', label: '全期間(2022-08-19〜)' },
 ];
 
+function _daysFromPeriod(period: string): number {
+  if (period === 'all') {
+    const start = new Date(FOUNDED_DATE);
+    return Math.max(1, Math.floor((Date.now() - start.getTime()) / (1000 * 60 * 60 * 24)));
+  }
+  return Number(period) || 30;
+}
+
 export default function DashboardPage() {
-  const [days, setDays] = useState<number>(30);
+  const [period, setPeriod] = useState<string>('30');
+  const days = _daysFromPeriod(period);
+  const isAll = period === 'all';
+
   const { data, isPending, error } = useQuery<KpiSummary, Error>({
-    queryKey: ['kpi', 'summary', days],
-    queryFn: () => fetchKpiSummary(days),
+    queryKey: ['kpi', 'summary', period],
+    queryFn: () =>
+      fetchKpiSummary(isAll ? { startDate: FOUNDED_DATE } : { days }),
+  });
+
+  // 施策(マーケティングアクション)— 全期間の目印として常に取得
+  const { data: actions = [] } = useQuery({
+    queryKey: ['marketing-actions', 'all'],
+    queryFn: () => fetchMarketingActions(),
   });
 
   const periodHint = data ? `過去 ${data.period_days} 日` : `過去 ${days} 日`;
+
+  // 施策をグラフに重ねるため、各日付(または週/月の bucket 開始日)に紐付ける
+  const actionsByBucket = (() => {
+    const map = new Map<string, MarketingAction[]>();
+    if (!data) return map;
+    const granularity = data.granularity;
+    for (const a of actions) {
+      const d = new Date(a.action_date);
+      let bucket = a.action_date;
+      if (granularity === 'week') {
+        const day = d.getDay() || 7; // Sun=0 -> 7
+        const monday = new Date(d);
+        monday.setDate(d.getDate() - (day - 1));
+        bucket = monday.toISOString().slice(0, 10);
+      } else if (granularity === 'month') {
+        bucket = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+      }
+      const arr = map.get(bucket) ?? [];
+      arr.push(a);
+      map.set(bucket, arr);
+    }
+    return map;
+  })();
+  const seriesWithActions = (data?.series ?? []).map((p) => ({
+    ...p,
+    actions: actionsByBucket.get(p.date) ?? [],
+    actions_count: (actionsByBucket.get(p.date) ?? []).length,
+  }));
 
   const overview = (
     <div className="space-y-6">
@@ -1260,7 +1484,10 @@ export default function DashboardPage() {
             </p>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={data.series} margin={{ top: 5, right: 16, bottom: 24, left: 0 }}>
+              <LineChart
+                data={seriesWithActions}
+                margin={{ top: 5, right: 16, bottom: 24, left: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
                   dataKey="date"
@@ -1271,18 +1498,7 @@ export default function DashboardPage() {
                   minTickGap={12}
                 />
                 <YAxis stroke="hsl(var(--muted-foreground))" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'hsl(var(--card))',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: 8,
-                    color: 'hsl(var(--card-foreground))',
-                    fontSize: 12,
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-                  }}
-                  labelStyle={{ color: 'hsl(var(--card-foreground))', fontWeight: 600 }}
-                  itemStyle={{ color: 'hsl(var(--card-foreground))' }}
-                />
+                <Tooltip content={<TrendTooltip />} />
                 <Line
                   type="monotone"
                   dataKey="sessions"
@@ -1329,6 +1545,36 @@ export default function DashboardPage() {
                   stroke="hsl(var(--destructive))"
                   dot={false}
                 />
+                {/* 施策マーカー: セッション線の上に紫▲を載せる。stroke は透明にして線は見せない */}
+                <Line
+                  type="monotone"
+                  dataKey="sessions"
+                  name="施策"
+                  stroke="transparent"
+                  legendType="none"
+                  isAnimationActive={false}
+                  activeDot={false}
+                  dot={(props: {
+                    cx?: number;
+                    cy?: number;
+                    payload?: { actions_count?: number };
+                    index?: number;
+                  }) => {
+                    const { cx, cy, payload, index } = props;
+                    if (cx === undefined || cy === undefined || !payload?.actions_count) {
+                      return <g key={`act-empty-${index ?? ''}`} />;
+                    }
+                    return (
+                      <polygon
+                        key={`act-${index ?? ''}`}
+                        points={`${cx},${cy - 9} ${cx - 7},${cy + 4} ${cx + 7},${cy + 4}`}
+                        fill="#8b5cf6"
+                        stroke="white"
+                        strokeWidth={1}
+                      />
+                    );
+                  }}
+                />
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -1374,6 +1620,12 @@ export default function DashboardPage() {
     </div>
   );
 
+  const actionsTab = (
+    <div className="space-y-6">
+      <MarketingActionsBlock />
+    </div>
+  );
+
   return (
     <div className="space-y-6">
       <AnomalyBanner />
@@ -1382,8 +1634,8 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">期間</span>
           <select
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
             aria-label="期間"
           >
@@ -1402,6 +1654,7 @@ export default function DashboardPage() {
           { id: 'content', label: 'コンテンツ分析', content: contentTab },
           { id: 'keyword', label: 'キーワード戦略', content: keywordTab },
           { id: 'competitor', label: '競合', content: competitorTab },
+          { id: 'actions', label: '施策', content: actionsTab },
           { id: 'settings', label: 'アラート/レポート', content: settingsTab },
         ]}
       />
