@@ -86,6 +86,29 @@ const LLM_LABEL: Record<string, string> = {
   aio: 'AIO',
 };
 
+/** Recharts XAxis 用の縦 3 行ティック(YYYY / MM / DD)。狭い幅でも読める。 */
+function DateTick(props: { x?: number; y?: number; payload?: { value?: string } }) {
+  const { x = 0, y = 0, payload } = props;
+  const raw = payload?.value ?? '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  const [yyyy, mm, dd] = m ? [m[1], m[2], m[3]] : [raw, '', ''];
+  return (
+    <g transform={`translate(${x},${y + 8})`}>
+      <text textAnchor="middle" fill="hsl(var(--muted-foreground))" fontSize={10}>
+        <tspan x={0} dy={0}>
+          {yyyy}
+        </tspan>
+        <tspan x={0} dy={12}>
+          {mm}
+        </tspan>
+        <tspan x={0} dy={12}>
+          {dd}
+        </tspan>
+      </text>
+    </g>
+  );
+}
+
 function DeltaBadge({ delta, label }: { delta: number | null; label: string }) {
   if (delta === null || delta === undefined) {
     return <span className="text-xs text-muted-foreground">{label} —</span>;
@@ -1236,12 +1259,30 @@ export default function DashboardPage() {
               データがまだ蓄積されていません(GSC/GA4/引用モニタの初回ジョブを待ってください)
             </p>
           ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={data.series}>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={data.series} margin={{ top: 5, right: 16, bottom: 24, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
+                <XAxis
+                  dataKey="date"
+                  stroke="hsl(var(--muted-foreground))"
+                  tick={DateTick}
+                  height={56}
+                  interval="preserveStartEnd"
+                  minTickGap={12}
+                />
                 <YAxis stroke="hsl(var(--muted-foreground))" />
-                <Tooltip />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--card))',
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: 8,
+                    color: 'hsl(var(--card-foreground))',
+                    fontSize: 12,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                  }}
+                  labelStyle={{ color: 'hsl(var(--card-foreground))', fontWeight: 600 }}
+                  itemStyle={{ color: 'hsl(var(--card-foreground))' }}
+                />
                 <Line
                   type="monotone"
                   dataKey="sessions"
