@@ -107,11 +107,18 @@ function KpiCard({
   label,
   metric,
   hint,
+  coverageSince,
 }: {
   label: string;
   metric?: KpiMetric;
   hint?: string;
+  coverageSince?: string | null;
 }) {
+  // YoY を出すには 1 年以上の蓄積が必要
+  const hasYearOfData = coverageSince
+    ? Date.now() - new Date(coverageSince).getTime() >= 365 * 24 * 3600 * 1000
+    : false;
+
   return (
     <Card>
       <CardHeader>
@@ -123,7 +130,13 @@ function KpiCard({
           {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <DeltaBadge delta={metric?.delta_pct ?? null} label="前期間比" />
-            <DeltaBadge delta={metric?.yoy_pct ?? null} label="YoY" />
+            {hasYearOfData ? (
+              <DeltaBadge delta={metric?.yoy_pct ?? null} label="YoY" />
+            ) : (
+              <span className="text-xs text-muted-foreground" title="1 年分のデータが揃うと YoY を表示します">
+                YoY 蓄積中
+              </span>
+            )}
           </div>
         </div>
       </CardContent>
@@ -1169,21 +1182,25 @@ export default function DashboardPage() {
           label="AI 引用回数"
           metric={data?.metrics?.ai_citation_count}
           hint={periodHint}
+          coverageSince={data?.coverage?.citations_since}
         />
         <KpiCard
           label="オーガニックセッション"
           metric={data?.metrics?.sessions}
           hint={periodHint}
+          coverageSince={data?.coverage?.sessions_since}
         />
         <KpiCard
           label="問い合わせ数"
           metric={data?.metrics?.inquiries_count}
           hint={periodHint}
+          coverageSince={data?.coverage?.inquiries_since}
         />
         <KpiCard
           label="公開記事数"
           metric={data?.metrics?.contents_published}
           hint={periodHint}
+          coverageSince={data?.coverage?.contents_since}
         />
       </div>
 

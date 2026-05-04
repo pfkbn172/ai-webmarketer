@@ -14,6 +14,7 @@ from app.db.base import get_db_session
 from app.db.models.citation_log import CitationLog
 from app.db.models.content import Content
 from app.db.models.enums import ContentStatusEnum
+from app.db.models.ga4_daily_metric import Ga4DailyMetric
 from app.db.models.inquiry import Inquiry
 from app.db.models.kpi_log import KpiLog
 
@@ -40,6 +41,15 @@ class KpiMetric(BaseModel):
     yoy_pct: float | None = None
 
 
+class DataCoverage(BaseModel):
+    """各データソースの DB 蓄積開始日。YoY が出せるかをフロントで判定するのに使う。"""
+
+    sessions_since: date | None = None
+    citations_since: date | None = None
+    inquiries_since: date | None = None
+    contents_since: date | None = None
+
+
 class KpiSummaryOut(BaseModel):
     period_days: int
     ai_citation_count: int
@@ -49,6 +59,7 @@ class KpiSummaryOut(BaseModel):
     series: list[KpiPoint]
     # Phase 2 拡張: 各 KPI に前期間比較を付ける
     metrics: dict[str, KpiMetric]
+    coverage: DataCoverage
 
 
 def _delta_pct(curr: int, prev: int) -> float | None:
@@ -228,6 +239,30 @@ async def kpi_summary(
         ),
     }
 
+    coverage = DataCoverage(
+        sessions_since=await session.scalar(
+            select(func.min(Ga4DailyMetric.date)).where(
+                Ga4DailyMetric.tenant_id == tenant_id
+            )
+        ),
+        citations_since=await session.scalar(
+            select(func.min(CitationLog.query_date)).where(
+                CitationLog.tenant_id == tenant_id
+            )
+        ),
+        inquiries_since=await session.scalar(
+            select(func.min(func.date(Inquiry.received_at))).where(
+                Inquiry.tenant_id == tenant_id
+            )
+        ),
+        contents_since=await session.scalar(
+            select(func.min(func.date(Content.published_at))).where(
+                Content.tenant_id == tenant_id,
+                Content.status == ContentStatusEnum.published,
+            )
+        ),
+    )
+
     return KpiSummaryOut(
         period_days=days,
         ai_citation_count=int(citation_total),
@@ -236,4 +271,5 @@ async def kpi_summary(
         contents_published=int(contents_published),
         series=series,
         metrics=metrics,
+        coverage=coverage,
     )

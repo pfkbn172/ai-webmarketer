@@ -17,6 +17,13 @@ export type KpiMetric = {
   yoy_pct: number | null;
 };
 
+export type DataCoverage = {
+  sessions_since: string | null;
+  citations_since: string | null;
+  inquiries_since: string | null;
+  contents_since: string | null;
+};
+
 export type KpiSummary = {
   period_days: number;
   ai_citation_count: number;
@@ -25,6 +32,7 @@ export type KpiSummary = {
   contents_published: number;
   series: KpiPoint[];
   metrics: Record<string, KpiMetric>;
+  coverage: DataCoverage;
 };
 
 export async function fetchKpiSummary(days = 30): Promise<KpiSummary> {
