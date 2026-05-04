@@ -66,7 +66,7 @@ async def suggest_queries(
         system_prompt="あなたは中小企業向け SEO/LLMO 戦略コンサルタントです。",
         user_prompt=prompt,
         response_format="json",
-        max_tokens=4000,
+        max_tokens=8000,
         temperature=0.5,
     )
     log.info(
@@ -74,9 +74,39 @@ async def suggest_queries(
         tenant_id=str(tenant_id),
         tokens=res.usage.total_tokens,
     )
-    try:
-        suggestions = json.loads(res.text)
-    except json.JSONDecodeError:
-        log.warning("query_suggestion_invalid_json", raw=res.text[:200])
+    return _parse_json_array(res.text)
+
+
+def _parse_json_array(text: str) -> list[dict]:
+    """JSON 配列を抽出する。コードフェンスや前後説明が混入しても拾えるよう、
+    最初の '[' から最後の ']' までを抽出してパースする。出力が途中で切れた場合は
+    末尾の不完全なオブジェクトを切り捨てて再パースする。
+    """
+    if not text:
         return []
-    return suggestions if isinstance(suggestions, list) else []
+    # 最初の [ から最後の ] までを抽出
+    start = text.find("[")
+    end = text.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        log.warning("query_suggestion_no_array", raw=text[:200])
+        return []
+    snippet = text[start : end + 1]
+    try:
+        parsed = json.loads(snippet)
+        if isinstance(parsed, list):
+            return parsed
+    except json.JSONDecodeError:
+        # 出力が途中で切れた場合: 完成しているオブジェクトだけ残す
+        # "}, " を区切りに探して最後の閉じ ", " 位置で配列を閉じ直す
+        last_close = snippet.rfind("},")
+        if last_close > 0:
+            patched = snippet[: last_close + 1] + "]"
+            try:
+                parsed = json.loads(patched)
+                if isinstance(parsed, list):
+                    log.info("query_suggestion_partial_recovered", n=len(parsed))
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+    log.warning("query_suggestion_invalid_json", raw=text[:200])
+    return []

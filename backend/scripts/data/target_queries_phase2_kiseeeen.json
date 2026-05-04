@@ -1,0 +1,146 @@
+[
+  {
+    "query_text": "平野区 IT DX サポート",
+    "cluster_id": "local_district_hq",
+    "priority": 5,
+    "expected_conversion": 5,
+    "search_intent": "拠点地域・平野区での IT/DX サポート(本拠地)"
+  },
+  {
+    "query_text": "喜連瓜破 IT サポート 中小企業",
+    "cluster_id": "local_district_hq",
+    "priority": 5,
+    "expected_conversion": 5,
+    "search_intent": "本拠地・喜連瓜破での IT サポート"
+  },
+  {
+    "query_text": "平野区 中小企業 AI 導入 相談",
+    "cluster_id": "local_district_hq",
+    "priority": 4,
+    "expected_conversion": 5,
+    "search_intent": "拠点地域・AI 導入相談"
+  },
+  {
+    "query_text": "平野区 DX 補助金 サポート",
+    "cluster_id": "local_district_hq",
+    "priority": 4,
+    "expected_conversion": 4,
+    "search_intent": "拠点地域・DX 補助金申請支援"
+  },
+
+  {
+    "query_text": "松原市 中小企業 DX サポート",
+    "cluster_id": "local_radius",
+    "priority": 5,
+    "expected_conversion": 5,
+    "search_intent": "半径 10km 圏・松原市(隣接市)"
+  },
+  {
+    "query_text": "八尾市 IT DX 中小企業",
+    "cluster_id": "local_radius",
+    "priority": 5,
+    "expected_conversion": 5,
+    "search_intent": "半径 10km 圏・八尾市(隣接市)"
+  },
+  {
+    "query_text": "東大阪市 中小企業 DX 支援",
+    "cluster_id": "local_radius",
+    "priority": 5,
+    "expected_conversion": 5,
+    "search_intent": "半径 10km 圏・東大阪市(隣接市、製造業多い)"
+  },
+  {
+    "query_text": "東住吉区 IT サポート 中小企業",
+    "cluster_id": "local_radius",
+    "priority": 4,
+    "expected_conversion": 4,
+    "search_intent": "半径 10km 圏・東住吉区(隣接区)"
+  },
+  {
+    "query_text": "生野区 DX サポート 中小企業",
+    "cluster_id": "local_radius",
+    "priority": 4,
+    "expected_conversion": 4,
+    "search_intent": "半径 10km 圏・生野区(隣接区)"
+  },
+  {
+    "query_text": "阿倍野区 IT DX サポート",
+    "cluster_id": "local_radius",
+    "priority": 4,
+    "expected_conversion": 4,
+    "search_intent": "半径 10km 圏・阿倍野区"
+  },
+  {
+    "query_text": "天王寺区 IT DX サポート",
+    "cluster_id": "local_radius",
+    "priority": 4,
+    "expected_conversion": 5,
+    "search_intent": "半径 10km 圏・天王寺区(ChatGPT 経由で実績獲得済み)"
+  },
+  {
+    "query_text": "中央区 IT サポート 中小企業 大阪",
+    "cluster_id": "local_radius",
+    "priority": 3,
+    "expected_conversion": 3,
+    "search_intent": "半径 10km 圏・中央区"
+  },
+  {
+    "query_text": "浪速区 IT DX 中小企業",
+    "cluster_id": "local_radius",
+    "priority": 3,
+    "expected_conversion": 3,
+    "search_intent": "半径 10km 圏・浪速区"
+  },
+
+  {
+    "query_text": "近隣 DX サポート 大阪南部",
+    "cluster_id": "geo_intent",
+    "priority": 4,
+    "expected_conversion": 4,
+    "search_intent": "「近所で DX 相談」検索意図(大阪南部)"
+  },
+  {
+    "query_text": "近所 中小企業 IT 顧問 大阪",
+    "cluster_id": "geo_intent",
+    "priority": 4,
+    "expected_conversion": 4,
+    "search_intent": "「近くの IT 顧問」検索意図"
+  },
+  {
+    "query_text": "近くで 業務効率化 相談 大阪市内",
+    "cluster_id": "geo_intent",
+    "priority": 3,
+    "expected_conversion": 3,
+    "search_intent": "「近くで業務効率化」検索意図"
+  },
+
+  {
+    "query_text": "東大阪 製造業 AI 導入",
+    "cluster_id": "industry_local",
+    "priority": 3,
+    "expected_conversion": 3,
+    "search_intent": "東大阪の製造業 × タイ製造業経験を活かす独自軸"
+  },
+  {
+    "query_text": "八尾 製造業 DX 業務改善",
+    "cluster_id": "industry_local",
+    "priority": 3,
+    "expected_conversion": 3,
+    "search_intent": "八尾の製造業 × 独自経験"
+  },
+
+  {
+    "query_text": "大阪 平野区 DX コンサル 比較",
+    "cluster_id": "competitive",
+    "priority": 3,
+    "expected_conversion": 3,
+    "search_intent": "拠点地域での比較検討段階(競合観測)"
+  },
+  {
+    "query_text": "大阪南部 IT 顧問 おすすめ",
+    "cluster_id": "competitive",
+    "priority": 3,
+    "expected_conversion": 3,
+    "search_intent": "大阪南部のおすすめ系競合観測"
+  }
+]
