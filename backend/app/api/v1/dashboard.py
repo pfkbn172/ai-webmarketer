@@ -596,3 +596,477 @@ async def ai_referrals(
     ]
     out.sort(key=lambda r: r.sessions, reverse=True)
     return out
+
+
+# === 記事/ページ単位のパフォーマンス ===
+
+# GA4 の pagePath(/blog/foo) と GSC の page(完全 URL)を URL の path 部分でつなぐ。
+# 完全一致しない場合は path で結合する。
+
+
+class PagePerformanceRow(BaseModel):
+    page_path: str
+    title: str | None
+    sessions: int
+    clicks: int
+    impressions: int
+    avg_position: float | None
+    citation_count: int  # 自社が引用された AI モニタログのうち、このページが含まれた回数
+
+
+@router.get("/page-performance", response_model=list[PagePerformanceRow])
+async def page_performance(
+    days: int = 30,
+    limit: int = 20,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[PagePerformanceRow]:
+    """記事 × 流入数 × クリック × 順位 × 引用回数の TOP N。"""
+    from app.db.models.content import Content as _Content
+
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    # GA4 page_path 集計
+    ga4_rows = (
+        await session.execute(
+            text(
+                "SELECT page_path, COALESCE(SUM(sessions),0) AS sessions "
+                "FROM ga4_page_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY page_path"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    ga4_map = {r.page_path: int(r.sessions or 0) for r in ga4_rows}
+
+    # GSC page 集計
+    gsc_rows = (
+        await session.execute(
+            text(
+                "SELECT page, COALESCE(SUM(clicks),0) AS clicks, "
+                "COALESCE(SUM(impressions),0) AS impressions, "
+                "AVG(position) AS pos "
+                "FROM gsc_page_metrics "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY page"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    # GSC の page は完全 URL のため、path 部分を抽出して GA4 と結合する
+    import urllib.parse as _u
+
+    gsc_by_path: dict[str, dict] = {}
+    gsc_by_full: dict[str, dict] = {}
+    for r in gsc_rows:
+        full = r.page or ""
+        try:
+            path = _u.urlparse(full).path or full
+        except ValueError:
+            path = full
+        v = {
+            "clicks": int(r.clicks or 0),
+            "impressions": int(r.impressions or 0),
+            "position": float(r.pos) if r.pos is not None else None,
+            "full_url": full,
+        }
+        gsc_by_full[full] = v
+        gsc_by_path[path] = v
+
+    # Content 一覧(URL → title)
+    contents = list(
+        (
+            await session.scalars(
+                select(_Content).where(_Content.tenant_id == tenant_id)
+            )
+        ).all()
+    )
+    title_by_url: dict[str, str] = {}
+    title_by_path: dict[str, str] = {}
+    for c in contents:
+        if c.url:
+            title_by_url[c.url] = c.title or ""
+            try:
+                p = _u.urlparse(c.url).path
+                if p:
+                    title_by_path[p] = c.title or ""
+            except ValueError:
+                pass
+
+    # citation_log.cited_urls は JSONB array、self_cited=True 行のみ対象
+    citation_rows = (
+        await session.execute(
+            text(
+                "SELECT cited_urls FROM citation_logs "
+                "WHERE tenant_id = :tid AND query_date BETWEEN :s AND :e "
+                "AND self_cited = TRUE"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    citation_count_by_path: dict[str, int] = defaultdict(int)
+    for row in citation_rows:
+        urls = row.cited_urls or []
+        if not isinstance(urls, list):
+            continue
+        for u in urls:
+            if not isinstance(u, str):
+                continue
+            try:
+                p = _u.urlparse(u).path or u
+            except ValueError:
+                p = u
+            citation_count_by_path[p] += 1
+
+    # 結合: page_path をキーに、GA4 と GSC を path レベルで突合
+    all_paths: set[str] = set(ga4_map.keys()) | set(gsc_by_path.keys())
+    out: list[PagePerformanceRow] = []
+    for path in all_paths:
+        gsc_v = gsc_by_path.get(path) or {}
+        out.append(
+            PagePerformanceRow(
+                page_path=path,
+                title=title_by_path.get(path) or title_by_url.get(path),
+                sessions=ga4_map.get(path, 0),
+                clicks=int(gsc_v.get("clicks") or 0),
+                impressions=int(gsc_v.get("impressions") or 0),
+                avg_position=gsc_v.get("position"),
+                citation_count=citation_count_by_path.get(path, 0),
+            )
+        )
+    out.sort(key=lambda r: (r.sessions, r.clicks, r.impressions), reverse=True)
+    return out[:limit]
+
+
+# === 漏斗(問い合わせ → 商談 → 受注)===
+
+
+class FunnelStage(BaseModel):
+    status: str
+    count: int
+    amount_yen: int  # 受注時のみ意味がある
+
+
+class FunnelOut(BaseModel):
+    period_days: int
+    stages: list[FunnelStage]
+    cv_rate: float | None  # 受注 / 新規(0〜1)
+    avg_amount_yen: float | None
+    cpa_yen: float | None  # 顧客獲得単価 = 期間内コンテンツ数 × 仮定単価... ここでは null とし、UI 側で表示しない
+
+
+@router.get("/funnel", response_model=FunnelOut)
+async def funnel(
+    days: int = 90,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> FunnelOut:
+    from app.db.models.enums import InquiryStatusEnum as _Status
+    from app.db.models.inquiry import Inquiry as _Inq
+
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    rows = list(
+        (
+            await session.scalars(
+                select(_Inq).where(
+                    _Inq.tenant_id == tenant_id,
+                    func.date(_Inq.received_at).between(start, end),
+                )
+            )
+        ).all()
+    )
+    by_status: dict[str, dict] = {
+        s.value: {"count": 0, "amount": 0} for s in _Status
+    }
+    for inq in rows:
+        s = inq.status.value
+        by_status[s]["count"] += 1
+        if inq.amount_yen and s == _Status.contracted.value:
+            by_status[s]["amount"] += int(inq.amount_yen)
+
+    new_count = by_status[_Status.new.value]["count"] + by_status[_Status.in_progress.value]["count"] + by_status[_Status.contracted.value]["count"] + by_status[_Status.lost.value]["count"]
+    contracted = by_status[_Status.contracted.value]["count"]
+    contracted_amount = by_status[_Status.contracted.value]["amount"]
+
+    stages = [
+        FunnelStage(status="新規", count=new_count, amount_yen=0),
+        FunnelStage(
+            status="商談中",
+            count=by_status[_Status.in_progress.value]["count"]
+            + by_status[_Status.contracted.value]["count"],
+            amount_yen=0,
+        ),
+        FunnelStage(status="受注", count=contracted, amount_yen=contracted_amount),
+        FunnelStage(
+            status="失注", count=by_status[_Status.lost.value]["count"], amount_yen=0
+        ),
+    ]
+    cv_rate = (contracted / new_count) if new_count > 0 else None
+    avg_amt = (contracted_amount / contracted) if contracted > 0 else None
+    return FunnelOut(
+        period_days=days,
+        stages=stages,
+        cv_rate=round(cv_rate, 4) if cv_rate is not None else None,
+        avg_amount_yen=round(avg_amt, 0) if avg_amt is not None else None,
+        cpa_yen=None,
+    )
+
+
+# === キーワード機会マトリクス(impressions × position × 自社引用率)===
+
+
+class KeywordOpportunity(BaseModel):
+    query_text: str
+    impressions: int
+    avg_position: float | None
+    citation_rate: float  # 0〜1
+    cluster_id: str | None
+    recommended_action: str  # 'win'(順位 1〜3 + 引用も多い)/ 'optimize'(順位 4〜10) / 'create'(impressions 多いが順位なし) / 'monitor'
+
+
+@router.get("/keyword-opportunity", response_model=list[KeywordOpportunity])
+async def keyword_opportunity(
+    days: int = 30,
+    limit: int = 30,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[KeywordOpportunity]:
+    """検索ボリューム(impressions)と順位、引用率の組み合わせで「次に狙うべきキーワード」を提示。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    gsc_rows = (
+        await session.execute(
+            select(
+                GscQueryMetric.query_text,
+                func.sum(GscQueryMetric.impressions).label("imp"),
+                func.avg(GscQueryMetric.position).label("pos"),
+            )
+            .where(
+                GscQueryMetric.tenant_id == tenant_id,
+                GscQueryMetric.date.between(start, end),
+            )
+            .group_by(GscQueryMetric.query_text)
+            .order_by(func.sum(GscQueryMetric.impressions).desc())
+            .limit(limit * 2)
+        )
+    ).all()
+
+    # 引用率(target_query 単位)
+    queries = list(
+        (
+            await session.scalars(
+                select(TargetQuery).where(TargetQuery.tenant_id == tenant_id)
+            )
+        ).all()
+    )
+    cluster_by_text = {q.query_text: q.cluster_id for q in queries}
+    qid_by_text = {q.query_text: q.id for q in queries}
+
+    citation_rows = list(
+        (
+            await session.scalars(
+                select(CitationLog).where(
+                    CitationLog.tenant_id == tenant_id,
+                    CitationLog.query_date.between(start, end),
+                )
+            )
+        ).all()
+    )
+    cite_by_qid: dict = defaultdict(lambda: [0, 0])
+    for c in citation_rows:
+        cell = cite_by_qid[c.query_id]
+        cell[1] += 1
+        if c.self_cited:
+            cell[0] += 1
+
+    out: list[KeywordOpportunity] = []
+    for r in gsc_rows:
+        qt = r.query_text
+        imp = int(r.imp or 0)
+        pos = float(r.pos) if r.pos is not None else None
+        qid = qid_by_text.get(qt)
+        cite_pair = cite_by_qid.get(qid, [0, 0]) if qid else [0, 0]
+        cite_rate = (cite_pair[0] / cite_pair[1]) if cite_pair[1] > 0 else 0.0
+
+        if pos is None or pos > 30:
+            action = "create"  # 露出はあるが順位なし → 新規記事の好機
+        elif pos <= 3 and cite_rate >= 0.5:
+            action = "win"
+        elif pos <= 10:
+            action = "optimize"
+        else:
+            action = "monitor"
+
+        out.append(
+            KeywordOpportunity(
+                query_text=qt,
+                impressions=imp,
+                avg_position=round(pos, 1) if pos is not None else None,
+                citation_rate=round(cite_rate, 4),
+                cluster_id=cluster_by_text.get(qt),
+                recommended_action=action,
+            )
+        )
+    return out[:limit]
+
+
+# === 競合の引用記事の中身分析 ===
+
+
+class CompetitorContent(BaseModel):
+    domain: str
+    url: str
+    cite_count: int
+    sample_query: str | None
+
+
+@router.get("/competitor-content", response_model=list[CompetitorContent])
+async def competitor_content(
+    days: int = 30,
+    limit: int = 20,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[CompetitorContent]:
+    """citation_logs から、自社以外のドメインの URL を抽出し引用回数で集計。
+
+    自社 URL 判定: tenants.business_context.site_url ホスト名。
+    """
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    tenant = (
+        await session.scalars(select(Tenant).where(Tenant.id == tenant_id))
+    ).one()
+    bc = tenant.business_context or {}
+    own_host = ""
+    site = bc.get("site_url") or ""
+    import urllib.parse as _u
+
+    try:
+        own_host = _u.urlparse(site).netloc.lower()
+        if own_host.startswith("www."):
+            own_host = own_host[4:]
+    except ValueError:
+        pass
+
+    citations = (
+        await session.execute(
+            text(
+                "SELECT cited_urls, query_id FROM citation_logs "
+                "WHERE tenant_id = :tid AND query_date BETWEEN :s AND :e"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    queries = list(
+        (
+            await session.scalars(
+                select(TargetQuery).where(TargetQuery.tenant_id == tenant_id)
+            )
+        ).all()
+    )
+    qtext_by_id = {q.id: q.query_text for q in queries}
+
+    # url -> {count, sample_qid}
+    by_url: dict[str, dict] = defaultdict(lambda: {"count": 0, "qid": None})
+    for row in citations:
+        urls = row.cited_urls or []
+        if not isinstance(urls, list):
+            continue
+        for u in urls:
+            if not isinstance(u, str) or not u:
+                continue
+            try:
+                host = _u.urlparse(u).netloc.lower()
+                if host.startswith("www."):
+                    host = host[4:]
+            except ValueError:
+                continue
+            if not host or (own_host and host == own_host):
+                continue
+            cell = by_url[u]
+            cell["count"] += 1
+            if cell["qid"] is None:
+                cell["qid"] = row.query_id
+
+    items = sorted(by_url.items(), key=lambda x: x[1]["count"], reverse=True)[:limit]
+    out: list[CompetitorContent] = []
+    for url, v in items:
+        try:
+            host = _u.urlparse(url).netloc.lower()
+            if host.startswith("www."):
+                host = host[4:]
+        except ValueError:
+            host = ""
+        out.append(
+            CompetitorContent(
+                domain=host,
+                url=url,
+                cite_count=v["count"],
+                sample_query=qtext_by_id.get(v["qid"]) if v["qid"] else None,
+            )
+        )
+    return out
+
+
+# === アラートルール(business_context.alert_rules)===
+
+
+class AlertRule(BaseModel):
+    id: str
+    metric: str  # 'sessions_drop_pct' | 'citations_drop_pct' | 'inquiries_zero_days' | 'anomaly'
+    threshold: float
+    notify_email: str | None = None
+    notify_slack_webhook: str | None = None
+    enabled: bool = True
+
+
+@router.get("/alert-rules", response_model=list[AlertRule])
+async def get_alert_rules(
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[AlertRule]:
+    await _set_ctx(session, tenant_id)
+    tenant = (
+        await session.scalars(select(Tenant).where(Tenant.id == tenant_id))
+    ).one()
+    bc = tenant.business_context or {}
+    raw = bc.get("alert_rules", []) or []
+    out: list[AlertRule] = []
+    for item in raw:
+        if isinstance(item, dict):
+            try:
+                out.append(AlertRule(**item))
+            except Exception:
+                continue
+    return out
+
+
+class AlertRulesBulk(BaseModel):
+    items: list[AlertRule]
+
+
+@router.put("/alert-rules", response_model=list[AlertRule])
+async def replace_alert_rules(
+    body: AlertRulesBulk,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[AlertRule]:
+    await _set_ctx(session, tenant_id)
+    tenant = (
+        await session.scalars(select(Tenant).where(Tenant.id == tenant_id))
+    ).one()
+    bc = dict(tenant.business_context or {})
+    bc["alert_rules"] = [item.model_dump() for item in body.items]
+    tenant.business_context = bc
+    await session.commit()
+    return body.items

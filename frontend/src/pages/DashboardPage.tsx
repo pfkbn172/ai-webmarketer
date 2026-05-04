@@ -28,24 +28,38 @@ import {
 
 import {
   fetchAiReferrals,
+  fetchAlertRules,
   fetchChannelBreakdown,
   fetchClusterCitation,
+  fetchCompetitorContent,
   fetchCompetitorPatternsTop,
+  fetchFunnel,
   fetchHeatmap,
+  fetchKeywordOpportunity,
   fetchNextActions,
   fetchObjectives,
+  fetchPagePerformance,
   fetchTopQueries,
   generateNextActionsWithAi,
+  replaceAlertRules,
   replaceNextActions,
   upsertObjectives,
+  type AlertRule,
   type NextAction,
   type Objective,
 } from '@/api/dashboard';
 import { fetchKpiSummary, type KpiMetric, type KpiSummary } from '@/api/kpi';
+import {
+  createShareToken,
+  fetchReports,
+  reportPdfUrl,
+  revokeShareToken,
+} from '@/api/reports';
 import { fetchAnomalies, type Anomaly } from '@/api/strategic';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { Tabs } from '@/components/ui/Tabs';
 
 const CLUSTER_LABEL: Record<string, string> = {
   brand: 'ブランド',
@@ -72,9 +86,9 @@ const LLM_LABEL: Record<string, string> = {
   aio: 'AIO',
 };
 
-function DeltaBadge({ delta }: { delta: number | null }) {
+function DeltaBadge({ delta, label }: { delta: number | null; label: string }) {
   if (delta === null || delta === undefined) {
-    return <span className="text-xs text-muted-foreground">前期間比 —</span>;
+    return <span className="text-xs text-muted-foreground">{label} —</span>;
   }
   const positive = delta >= 0;
   const cls = positive
@@ -83,7 +97,7 @@ function DeltaBadge({ delta }: { delta: number | null }) {
   const sign = positive ? '+' : '';
   return (
     <span className={`text-xs font-medium ${cls}`}>
-      前期間比 {sign}
+      {label} {sign}
       {delta.toFixed(1)}%
     </span>
   );
@@ -105,9 +119,12 @@ function KpiCard({
       </CardHeader>
       <CardContent>
         <div className="text-3xl font-semibold tabular-nums">{metric?.value ?? '—'}</div>
-        <div className="mt-1 flex items-center justify-between">
+        <div className="mt-1 flex flex-col gap-0.5">
           {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-          <DeltaBadge delta={metric?.delta_pct ?? null} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <DeltaBadge delta={metric?.delta_pct ?? null} label="前期間比" />
+            <DeltaBadge delta={metric?.yoy_pct ?? null} label="YoY" />
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -686,6 +703,457 @@ function NextActionsBlock() {
   );
 }
 
+function PagePerformanceBlock() {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'page-performance'],
+    queryFn: () => fetchPagePerformance(30, 20),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>記事/ページ別パフォーマンス TOP 20(過去 30 日)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            GSC / GA4 のページ単位データがまだありません(初回ジョブ後に表示されます)。
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="py-1">ページ</th>
+                  <th className="py-1 text-right">セッション</th>
+                  <th className="py-1 text-right">CL</th>
+                  <th className="py-1 text-right">表示</th>
+                  <th className="py-1 text-right">順位</th>
+                  <th className="py-1 text-right">AI 引用</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((p) => (
+                  <tr key={p.page_path} className="border-t border-border">
+                    <td className="py-1 max-w-[20rem] truncate">
+                      <span className="font-medium">{p.title || p.page_path}</span>
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {p.page_path}
+                      </div>
+                    </td>
+                    <td className="py-1 text-right tabular-nums">{p.sessions}</td>
+                    <td className="py-1 text-right tabular-nums">{p.clicks}</td>
+                    <td className="py-1 text-right tabular-nums">{p.impressions}</td>
+                    <td className="py-1 text-right tabular-nums">
+                      {p.avg_position === null ? '—' : p.avg_position.toFixed(1)}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">{p.citation_count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FunnelBlock() {
+  const { data, isPending } = useQuery({
+    queryKey: ['dashboard', 'funnel'],
+    queryFn: () => fetchFunnel(90),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>コンバージョン漏斗(過去 90 日)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : !data ? (
+          <p className="text-sm text-muted-foreground">データがありません。</p>
+        ) : (
+          <div className="space-y-3">
+            {data.stages.map((s) => {
+              const max = data.stages[0]?.count || 1;
+              const pct = (s.count / max) * 100;
+              return (
+                <div key={s.status}>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span>{s.status}</span>
+                    <span className="tabular-nums">
+                      <b>{s.count}</b>
+                      {s.amount_yen > 0 && (
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          ¥{s.amount_yen.toLocaleString()}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+            <div className="grid grid-cols-2 gap-3 pt-2 text-sm">
+              <div>
+                <div className="text-xs text-muted-foreground">CV 率(受注 / 新規)</div>
+                <div className="text-lg font-semibold tabular-nums">
+                  {data.cv_rate === null ? '—' : `${(data.cv_rate * 100).toFixed(1)}%`}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">平均受注単価</div>
+                <div className="text-lg font-semibold tabular-nums">
+                  {data.avg_amount_yen === null
+                    ? '—'
+                    : `¥${data.avg_amount_yen.toLocaleString()}`}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const ACTION_LABEL: Record<string, string> = {
+  win: '勝ち取る',
+  optimize: '最適化',
+  create: '新規記事',
+  monitor: '観察',
+};
+const ACTION_BG: Record<string, string> = {
+  win: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+  optimize: 'bg-amber-500/20 text-amber-700 dark:text-amber-300',
+  create: 'bg-sky-500/20 text-sky-700 dark:text-sky-300',
+  monitor: 'bg-muted text-muted-foreground',
+};
+
+function KeywordOpportunityBlock() {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'keyword-opportunity'],
+    queryFn: () => fetchKeywordOpportunity(30, 30),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>キーワード機会マトリクス</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">GSC データがまだありません。</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="py-1">クエリ</th>
+                  <th className="py-1 text-right">表示</th>
+                  <th className="py-1 text-right">順位</th>
+                  <th className="py-1 text-right">引用率</th>
+                  <th className="py-1">推奨</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((q, i) => (
+                  <tr key={i} className="border-t border-border">
+                    <td className="py-1 max-w-[18rem] truncate">{q.query_text}</td>
+                    <td className="py-1 text-right tabular-nums">{q.impressions}</td>
+                    <td className="py-1 text-right tabular-nums">
+                      {q.avg_position === null ? '—' : q.avg_position.toFixed(1)}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">
+                      {(q.citation_rate * 100).toFixed(0)}%
+                    </td>
+                    <td className="py-1">
+                      <span
+                        className={`inline-block rounded px-2 py-0.5 text-[10px] ${ACTION_BG[q.recommended_action]}`}
+                      >
+                        {ACTION_LABEL[q.recommended_action]}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CompetitorContentBlock() {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'competitor-content'],
+    queryFn: () => fetchCompetitorContent(30, 20),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>競合に引用された記事 TOP 20(過去 30 日)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            自社以外の URL が AI に引用された記録がまだありません。
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {data.map((c, i) => (
+              <li key={i} className="border-t border-border pt-2 first:border-t-0 first:pt-0">
+                <div className="flex items-baseline justify-between gap-2">
+                  <a
+                    href={c.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-primary hover:underline truncate"
+                  >
+                    {c.url}
+                  </a>
+                  <span className="text-xs tabular-nums">{c.cite_count}回</span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  ドメイン: {c.domain}
+                  {c.sample_query && <span className="ml-3">きっかけ: 「{c.sample_query}」</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const METRIC_LABEL: Record<AlertRule['metric'], string> = {
+  sessions_drop_pct: 'セッションが先週比 X% 以上下落',
+  citations_drop_pct: 'AI 引用回数が先週比 X% 以上下落',
+  inquiries_zero_days: '直近 N 日間の問い合わせがゼロ',
+  anomaly: '異常値検出(7日移動平均から ±2σ)',
+};
+
+function AlertRulesEditor() {
+  const qc = useQueryClient();
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'alert-rules'],
+    queryFn: fetchAlertRules,
+  });
+  const [editing, setEditing] = useState<AlertRule[]>([]);
+  useEffect(() => {
+    if (!isPending) setEditing(data);
+  }, [isPending, data]);
+
+  const saveMut = useMutation({
+    mutationFn: (items: AlertRule[]) => replaceAlertRules(items),
+    onSuccess: (data) => {
+      qc.setQueryData(['dashboard', 'alert-rules'], data);
+      setEditing(data);
+    },
+  });
+
+  const update = (idx: number, patch: Partial<AlertRule>) => {
+    const next = [...editing];
+    next[idx] = { ...next[idx], ...patch };
+    setEditing(next);
+  };
+  const remove = (idx: number) => {
+    setEditing(editing.filter((_, i) => i !== idx));
+  };
+  const add = () => {
+    setEditing([
+      ...editing,
+      {
+        id: crypto.randomUUID(),
+        metric: 'sessions_drop_pct',
+        threshold: 20,
+        notify_email: null,
+        notify_slack_webhook: null,
+        enabled: true,
+      },
+    ]);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>アラート設定</CardTitle>
+          <Button size="sm" onClick={() => saveMut.mutate(editing)} disabled={saveMut.isPending}>
+            {saveMut.isPending ? '保存中…' : '保存'}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {editing.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            まだルールがありません。「追加」を押してしきい値を設定してください。
+          </p>
+        ) : (
+          editing.map((r, idx) => (
+            <div key={r.id} className="rounded border border-border p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={r.enabled}
+                  onChange={(e) => update(idx, { enabled: e.target.checked })}
+                />
+                <select
+                  value={r.metric}
+                  onChange={(e) => update(idx, { metric: e.target.value as AlertRule['metric'] })}
+                  className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  {Object.entries(METRIC_LABEL).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="text-xs text-muted-foreground hover:text-destructive"
+                  onClick={() => remove(idx)}
+                  aria-label="削除"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Input
+                  type="number"
+                  value={r.threshold}
+                  onChange={(e) => update(idx, { threshold: Number(e.target.value) })}
+                  placeholder="しきい値"
+                />
+                <Input
+                  type="email"
+                  value={r.notify_email ?? ''}
+                  onChange={(e) => update(idx, { notify_email: e.target.value || null })}
+                  placeholder="通知メール (任意)"
+                />
+                <Input
+                  type="url"
+                  value={r.notify_slack_webhook ?? ''}
+                  onChange={(e) =>
+                    update(idx, { notify_slack_webhook: e.target.value || null })
+                  }
+                  placeholder="Slack Webhook URL (任意)"
+                />
+              </div>
+            </div>
+          ))
+        )}
+        <Button size="sm" variant="secondary" onClick={add}>
+          + ルール追加
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          毎週月曜 6:30 JST に評価し、しきい値を超えたら登録した連絡先に通知します。
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReportsBlock() {
+  const qc = useQueryClient();
+  const { data = [], isPending } = useQuery({
+    queryKey: ['reports'],
+    queryFn: fetchReports,
+  });
+  const shareMut = useMutation({
+    mutationFn: (id: string) => createShareToken(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reports'] }),
+  });
+  const revokeMut = useMutation({
+    mutationFn: (id: string) => revokeShareToken(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reports'] }),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>月次/週次レポート</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            レポートはまだ生成されていません(毎月 3 日 7:00 JST に自動生成されます)。
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {data.map((r) => {
+              const sharedUrl = r.share_token
+                ? `${window.location.origin}/marketer/public/reports/${r.share_token}`
+                : null;
+              return (
+                <li
+                  key={r.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded border border-border p-2"
+                >
+                  <div>
+                    <div className="text-sm font-medium">
+                      {r.report_type === 'monthly' ? '月次' : '週次'} {r.period}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(r.generated_at).toLocaleString('ja-JP')}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a
+                      href={reportPdfUrl(r.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline"
+                    >
+                      PDF
+                    </a>
+                    {r.share_token ? (
+                      <>
+                        <a
+                          href={sharedUrl ?? '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline"
+                          title={sharedUrl ?? ''}
+                        >
+                          公開 URL
+                        </a>
+                        <button
+                          className="text-xs text-muted-foreground hover:text-destructive"
+                          onClick={() => revokeMut.mutate(r.id)}
+                        >
+                          公開停止
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="text-xs text-primary hover:underline"
+                        onClick={() => shareMut.mutate(r.id)}
+                      >
+                        公開 URL を発行
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
   const { data, isPending, error } = useQuery<KpiSummary, Error>({
     queryKey: ['kpi', 'summary', 30],
@@ -694,10 +1162,8 @@ export default function DashboardPage() {
 
   const periodHint = data ? `過去 ${data.period_days} 日` : '過去 30 日';
 
-  return (
+  const overview = (
     <div className="space-y-6">
-      <AnomalyBanner />
-
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="AI 引用回数"
@@ -730,7 +1196,7 @@ export default function DashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>セッション・引用推移</CardTitle>
+          <CardTitle>セッション・引用推移(7 日移動平均 + 異常値ハイライト)</CardTitle>
         </CardHeader>
         <CardContent>
           {isPending ? (
@@ -742,7 +1208,7 @@ export default function DashboardPage() {
               データがまだ蓄積されていません(GSC/GA4/引用モニタの初回ジョブを待ってください)
             </p>
           ) : (
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={280}>
               <LineChart data={data.series}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
@@ -753,6 +1219,38 @@ export default function DashboardPage() {
                   dataKey="sessions"
                   name="sessions"
                   stroke="hsl(var(--primary))"
+                  dot={(props: {
+                    cx?: number;
+                    cy?: number;
+                    payload?: { is_anomaly?: boolean };
+                    index?: number;
+                  }) => {
+                    const { cx, cy, payload, index } = props;
+                    if (cx === undefined || cy === undefined) {
+                      return <g key={`dot-empty-${index ?? ''}`} />;
+                    }
+                    return payload?.is_anomaly ? (
+                      <circle
+                        key={`dot-${index ?? ''}`}
+                        cx={cx}
+                        cy={cy}
+                        r={5}
+                        fill="hsl(var(--destructive))"
+                        stroke="white"
+                        strokeWidth={1}
+                      />
+                    ) : (
+                      <g key={`dot-${index ?? ''}`} />
+                    );
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="sessions_ma7"
+                  name="7日移動平均"
+                  stroke="hsl(var(--primary))"
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.5}
                   dot={false}
                 />
                 <Line
@@ -774,16 +1272,52 @@ export default function DashboardPage() {
         <ClusterCitationBlock />
       </div>
 
-      <HeatmapBlock />
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="md:col-span-2">
-          <TopQueriesBlock />
-        </div>
-        <CompetitorTopBlock />
-      </div>
-
       <NextActionsBlock />
+    </div>
+  );
+
+  const contentTab = (
+    <div className="space-y-6">
+      <PagePerformanceBlock />
+      <FunnelBlock />
+    </div>
+  );
+
+  const keywordTab = (
+    <div className="space-y-6">
+      <HeatmapBlock />
+      <KeywordOpportunityBlock />
+      <TopQueriesBlock />
+    </div>
+  );
+
+  const competitorTab = (
+    <div className="space-y-6">
+      <CompetitorTopBlock />
+      <CompetitorContentBlock />
+    </div>
+  );
+
+  const settingsTab = (
+    <div className="space-y-6">
+      <AlertRulesEditor />
+      <ReportsBlock />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <AnomalyBanner />
+      <Tabs
+        defaultId="overview"
+        tabs={[
+          { id: 'overview', label: '概要', content: overview },
+          { id: 'content', label: 'コンテンツ分析', content: contentTab },
+          { id: 'keyword', label: 'キーワード戦略', content: keywordTab },
+          { id: 'competitor', label: '競合', content: competitorTab },
+          { id: 'settings', label: 'アラート/レポート', content: settingsTab },
+        ]}
+      />
     </div>
   );
 }

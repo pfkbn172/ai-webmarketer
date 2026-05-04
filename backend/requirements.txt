@@ -40,6 +40,7 @@ beautifulsoup4>=4.12,<5
 lxml>=5
 feedparser>=6.0,<7
 resend>=2.0,<3
+weasyprint>=66,<70  # 月次レポート PDF 出力 (F. 共有 URL)
 
 # --- Headless browser(AI Overviews 自前取得用)---
 playwright>=1.50,<2

@@ -5,12 +5,16 @@ export type KpiPoint = {
   sessions: number | null;
   ai_citation_count: number | null;
   inquiries_count: number | null;
+  sessions_ma7: number | null;
+  is_anomaly: boolean;
 };
 
 export type KpiMetric = {
   value: number;
   prev_period_value: number;
   delta_pct: number | null;
+  prev_year_value: number | null;
+  yoy_pct: number | null;
 };
 
 export type KpiSummary = {

@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.scheduler.jobs.collect_competitor_rss import job as job_competitor_rss
 from app.scheduler.jobs.collect_ga4 import job as job_ga4
 from app.scheduler.jobs.collect_gsc import job as job_gsc
+from app.scheduler.jobs.evaluate_alerts import job as job_alerts
 from app.scheduler.jobs.generate_monthly_report import job as job_monthly
 from app.scheduler.jobs.generate_weekly_summary import job as job_weekly
 from app.scheduler.jobs.monitor_citation import job as job_citation
@@ -30,6 +31,8 @@ SCHEDULE = {
     ),
     # Q6: 毎月 3 日 7:00 JST(GSC/GA4 確定遅延を吸収)
     "generate_monthly_report": CronTrigger(day=3, hour=7, minute=0, timezone="Asia/Tokyo"),
+    # アラートは GSC/GA4 取り込み後の月曜 6:30
+    "evaluate_alerts": CronTrigger(day_of_week="mon", hour=6, minute=30, timezone="Asia/Tokyo"),
 }
 
 
@@ -47,5 +50,6 @@ def build_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         job_monthly, SCHEDULE["generate_monthly_report"], id="generate_monthly_report"
     )
+    scheduler.add_job(job_alerts, SCHEDULE["evaluate_alerts"], id="evaluate_alerts")
     log.info("scheduler_built", jobs=list(SCHEDULE.keys()))
     return scheduler

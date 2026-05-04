@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Index, Text
+from sqlalchemy import BigInteger, DateTime, Enum, Index, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,3 +32,5 @@ class Inquiry(Base, IdMixin, TenantMixin, TimestampsMixin):
         server_default=InquiryStatusEnum.new.value,
     )
     raw_payload: Mapped[dict | None] = mapped_column(JSONB)
+    # 受注時の金額(税抜・円)。LTV/CPA/ROAS 算出用。
+    amount_yen: Mapped[int | None] = mapped_column(BigInteger)

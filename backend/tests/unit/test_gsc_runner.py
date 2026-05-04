@@ -73,7 +73,8 @@ async def test_run_for_tenant_upserts_metrics(
     ]
 
     fake_client = MagicMock()
-    fake_client.query_metrics = AsyncMock(return_value=fake_rows)
+    # 1 回目: dimensions=['date','query'] / 2 回目: dimensions=['date','page']
+    fake_client.query_metrics = AsyncMock(side_effect=[fake_rows, []])
 
     monkeypatch.setattr(gsc_runner, "load_google_credentials", fake_load)
     monkeypatch.setattr(gsc_runner, "GscClient", lambda *a, **kw: fake_client)

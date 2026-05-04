@@ -18,6 +18,7 @@ from app.collectors.google_oauth import (
 )
 from app.collectors.gsc.client import GscClient
 from app.db.models.enums import CredentialProviderEnum, JobStatusEnum
+from app.db.models.gsc_page_metric import GscPageMetric
 from app.db.models.gsc_query_metric import GscQueryMetric
 from app.db.models.job_execution_log import JobExecutionLog
 from app.db.models.tenant_credential import TenantCredential  # noqa: F401  (登録維持)
@@ -61,14 +62,28 @@ async def run_for_tenant(
         rows = await client.query_metrics(
             start, end, dimensions=["date", "query"], row_limit=1000
         )
+        page_rows = await client.query_metrics(
+            start, end, dimensions=["date", "page"], row_limit=1000
+        )
 
         await _upsert_metrics(session, tenant_id, rows)
+        await _upsert_page_metrics(session, tenant_id, page_rows)
 
         job_log.status = JobStatusEnum.success
         job_log.finished_at = datetime.now(UTC)
-        job_log.job_metadata = {"row_count": len(rows), "start": start.isoformat(), "end": end.isoformat()}
+        job_log.job_metadata = {
+            "row_count": len(rows),
+            "page_row_count": len(page_rows),
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+        }
         await session.commit()
-        log.info("gsc_collect_done", tenant_id=str(tenant_id), rows=len(rows))
+        log.info(
+            "gsc_collect_done",
+            tenant_id=str(tenant_id),
+            rows=len(rows),
+            page_rows=len(page_rows),
+        )
         return len(rows)
 
     except CredentialsNotFoundError as exc:
@@ -115,6 +130,46 @@ async def _upsert_metrics(
     stmt = pg_insert(GscQueryMetric).values(payload)
     stmt = stmt.on_conflict_do_update(
         constraint="uq_gsc_qm_tenant_date_query",
+        set_={
+            "clicks": stmt.excluded.clicks,
+            "impressions": stmt.excluded.impressions,
+            "ctr": stmt.excluded.ctr,
+            "position": stmt.excluded.position,
+        },
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_page_metrics(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    rows: list,
+) -> None:
+    """GscPageMetric への UPSERT(date, page 単位で再実行可能)。"""
+    if not rows:
+        return
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tid, true)"),
+        {"tid": str(tenant_id)},
+    )
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "page": r.page or "(unknown)",
+            "clicks": r.clicks,
+            "impressions": r.impressions,
+            "ctr": r.ctr,
+            "position": r.position,
+        }
+        for r in rows
+        if r.page  # page が空のものは捨てる
+    ]
+    if not payload:
+        return
+    stmt = pg_insert(GscPageMetric).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_gsc_pm_tenant_date_page",
         set_={
             "clicks": stmt.excluded.clicks,
             "impressions": stmt.excluded.impressions,

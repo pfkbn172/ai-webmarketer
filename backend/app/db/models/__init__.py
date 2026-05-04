@@ -29,6 +29,8 @@ from app.db.models.enums import (
 )
 from app.db.models.ga4_ai_referral_daily import Ga4AiReferralDaily
 from app.db.models.ga4_daily_metric import Ga4DailyMetric
+from app.db.models.ga4_page_daily import Ga4PageDaily
+from app.db.models.gsc_page_metric import GscPageMetric
 from app.db.models.gsc_query_metric import GscQueryMetric
 from app.db.models.inquiry import Inquiry
 from app.db.models.job_execution_log import JobExecutionLog
@@ -57,6 +59,8 @@ __all__ = [
     "ContentMetric",
     "Ga4AiReferralDaily",
     "Ga4DailyMetric",
+    "Ga4PageDaily",
+    "GscPageMetric",
     "GscQueryMetric",
     "ContentStatusEnum",
     "CredentialProviderEnum",

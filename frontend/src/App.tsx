@@ -9,6 +9,7 @@ import DashboardPage from '@/pages/DashboardPage';
 import InquiriesPage from '@/pages/InquiriesPage';
 import LoginPage from '@/pages/LoginPage';
 import ManualPage from '@/pages/ManualPage';
+import PublicReportPage from '@/pages/PublicReportPage';
 import SettingsPage from '@/pages/SettingsPage';
 import StrategicReviewPage from '@/pages/StrategicReviewPage';
 import TargetQueriesPage from '@/pages/TargetQueriesPage';
@@ -23,6 +24,7 @@ export default function App() {
       <BrowserRouter basename="/marketer/">
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/public/reports/:token" element={<PublicReportPage />} />
           <Route
             element={
               <RequireAuth>

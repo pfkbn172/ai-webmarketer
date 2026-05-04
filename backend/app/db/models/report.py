@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import CHAR, DateTime, Text, UniqueConstraint, func
+from sqlalchemy import CHAR, DateTime, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,12 +12,15 @@ class Report(Base, IdMixin, TenantMixin):
     __tablename__ = "reports"
     __table_args__ = (
         UniqueConstraint("tenant_id", "period", "report_type", name="uq_reports_tenant_period_type"),
+        UniqueConstraint("share_token", name="uq_reports_share_token"),
     )
 
     period: Mapped[str] = mapped_column(CHAR(7), nullable=False)  # 'YYYY-MM'
     report_type: Mapped[str] = mapped_column(Text, nullable=False)  # 'monthly' | 'weekly'
     summary_html: Mapped[str | None] = mapped_column(Text)
     action_plan: Mapped[dict | None] = mapped_column(JSONB)
+    # 公開共有用トークン(NULL なら非公開)
+    share_token: Mapped[str | None] = mapped_column(String(48), index=True)
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

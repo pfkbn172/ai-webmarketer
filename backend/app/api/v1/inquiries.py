@@ -28,6 +28,7 @@ class InquiryIn(BaseModel):
     source_channel: InquirySourceEnum = InquirySourceEnum.web
     ai_origin: AiOriginEnum | None = None
     status: InquiryStatusEnum = InquiryStatusEnum.new
+    amount_yen: int | None = None
 
 
 class InquiryOut(InquiryIn):
@@ -44,6 +45,7 @@ def _row_dict(r: Inquiry) -> dict:
         "source_channel": r.source_channel,
         "ai_origin": r.ai_origin,
         "status": r.status,
+        "amount_yen": r.amount_yen,
     }
 
 
@@ -90,6 +92,7 @@ async def create_inquiry(
         source_channel=body.source_channel,
         ai_origin=body.ai_origin,
         status=body.status,
+        amount_yen=body.amount_yen,
         raw_payload={"source": "manual"},
     )
     session.add(row)
@@ -121,6 +124,39 @@ async def update_status(
     if not row:
         raise HTTPException(status_code=404, detail="not found")
     row.status = body.status
+    await session.flush()
+    result = InquiryOut(**_row_dict(row))
+    await session.commit()
+    return result
+
+
+class InquiryPatch(BaseModel):
+    status: InquiryStatusEnum | None = None
+    amount_yen: int | None = None
+
+
+@router.patch("/{inquiry_id}", response_model=InquiryOut)
+async def update_inquiry(
+    inquiry_id: uuid.UUID,
+    body: InquiryPatch,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> InquiryOut:
+    """ステータスと受注金額をまとめて更新できる汎用 PATCH。"""
+    await _set_ctx(session, tenant_id)
+    row = (
+        await session.scalars(
+            select(Inquiry).where(
+                Inquiry.tenant_id == tenant_id, Inquiry.id == inquiry_id
+            )
+        )
+    ).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+    if body.status is not None:
+        row.status = body.status
+    if body.amount_yen is not None:
+        row.amount_yen = body.amount_yen
     await session.flush()
     result = InquiryOut(**_row_dict(row))
     await session.commit()

@@ -13,6 +13,7 @@ export type Inquiry = {
   source_channel: InquirySourceChannel;
   ai_origin: AiOrigin | null;
   status: InquiryStatus;
+  amount_yen: number | null;
 };
 
 export type InquiryInput = Omit<Inquiry, 'id'> & { received_at?: string | null };
@@ -25,4 +26,10 @@ export async function createInquiry(payload: Partial<InquiryInput>): Promise<Inq
 }
 export async function updateInquiryStatus(id: string, status: InquiryStatus): Promise<Inquiry> {
   return (await apiClient.patch<Inquiry>(`/inquiries/${id}/status`, { status })).data;
+}
+export async function updateInquiry(
+  id: string,
+  patch: Partial<Pick<Inquiry, 'status' | 'amount_yen'>>,
+): Promise<Inquiry> {
+  return (await apiClient.patch<Inquiry>(`/inquiries/${id}`, patch)).data;
 }

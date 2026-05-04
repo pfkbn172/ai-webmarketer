@@ -43,6 +43,15 @@ class Ga4AiReferralRow:
     sessions: int
 
 
+@dataclass(frozen=True, slots=True)
+class Ga4PageRow:
+    date: date
+    page_path: str
+    sessions: int
+    users: int
+    conversions: int
+
+
 # AI チャットからの流入を判定する参照元ホスト名(GA4 sessionSource)。
 # GA4 が source として返す値は、参照元 URL のホスト名(www.* は除いた形)。
 # 値の整形は collector 側で行う。
@@ -144,6 +153,39 @@ class Ga4Client:
                     date=_parse_ga4_date(row.dimension_values[0].value),
                     source_host=row.dimension_values[1].value,
                     sessions=sessions,
+                )
+            )
+        return out
+
+    async def page_metrics(self, start: date, end: date, *, top_n: int = 200) -> list[Ga4PageRow]:
+        """日次 × pagePath のセッション・ユーザー・コンバージョン。
+
+        Top N URL に絞ることで、API の row_limit と DB 容量を節約。
+        """
+        req = RunReportRequest(
+            property=self._property,
+            date_ranges=[DateRange(start_date=start.isoformat(), end_date=end.isoformat())],
+            dimensions=[Dimension(name="date"), Dimension(name="pagePath")],
+            metrics=[
+                Metric(name="sessions"),
+                Metric(name="totalUsers"),
+                Metric(name="conversions"),
+            ],
+            limit=top_n,
+        )
+        resp = self._client.run_report(req)
+        out: list[Ga4PageRow] = []
+        for row in resp.rows:
+            sessions = int(row.metric_values[0].value or 0)
+            if sessions <= 0:
+                continue
+            out.append(
+                Ga4PageRow(
+                    date=_parse_ga4_date(row.dimension_values[0].value),
+                    page_path=row.dimension_values[1].value,
+                    sessions=sessions,
+                    users=int(row.metric_values[1].value or 0),
+                    conversions=int(float(row.metric_values[2].value or 0)),
                 )
             )
         return out
