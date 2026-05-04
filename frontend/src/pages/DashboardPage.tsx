@@ -55,6 +55,7 @@ import {
   createMarketingAction,
   deleteMarketingAction,
   fetchMarketingActions,
+  updateMarketingAction,
   type MarketingAction,
   type MarketingActionCategory,
 } from '@/api/marketing_actions';
@@ -1261,6 +1262,135 @@ function ReportsBlock() {
   );
 }
 
+function MarketingActionRow({ a }: { a: MarketingAction }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [date, setDate] = useState(a.action_date);
+  const [category, setCategory] = useState<MarketingActionCategory>(a.category);
+  const [title, setTitle] = useState(a.title);
+  const [description, setDescription] = useState(a.description ?? '');
+
+  const updateMut = useMutation({
+    mutationFn: () =>
+      updateMarketingAction(a.id, {
+        action_date: date,
+        category,
+        title,
+        description: description || null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['marketing-actions'] });
+      setEditing(false);
+    },
+  });
+  const deleteMut = useMutation({
+    mutationFn: () => deleteMarketingAction(a.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['marketing-actions'] }),
+  });
+
+  if (editing) {
+    return (
+      <li className="rounded border border-primary/40 bg-primary/5 p-2 text-sm space-y-2">
+        <div className="grid gap-2 md:grid-cols-[120px_140px_1fr]">
+          <Input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            aria-label="実施日"
+          />
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value as MarketingActionCategory)}
+            className="h-10 rounded-md border border-input bg-background px-2 text-sm"
+            aria-label="カテゴリ"
+          >
+            {(Object.entries(CATEGORY_LABEL) as [MarketingActionCategory, string][]).map(
+              ([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ),
+            )}
+          </select>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="施策タイトル"
+          />
+        </div>
+        <Input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="補足(任意)"
+        />
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setDate(a.action_date);
+              setCategory(a.category);
+              setTitle(a.title);
+              setDescription(a.description ?? '');
+              setEditing(false);
+            }}
+            disabled={updateMut.isPending}
+          >
+            キャンセル
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => updateMut.mutate()}
+            disabled={!title.trim() || updateMut.isPending}
+          >
+            {updateMut.isPending ? '保存中…' : '保存'}
+          </Button>
+        </div>
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-start gap-3 rounded border border-border p-2 text-sm">
+      <div className="text-xs tabular-nums text-muted-foreground" style={{ minWidth: 90 }}>
+        {a.action_date}
+      </div>
+      <span
+        className="rounded px-2 py-0.5 text-[10px] font-medium"
+        style={{
+          backgroundColor: `${CATEGORY_COLOR[a.category]}26`, // 15% alpha
+          color: CATEGORY_COLOR[a.category],
+        }}
+      >
+        {CATEGORY_LABEL[a.category]}
+      </span>
+      <div className="flex-1">
+        <div className="font-medium">{a.title}</div>
+        {a.description && (
+          <div className="text-xs text-muted-foreground">{a.description}</div>
+        )}
+      </div>
+      <button
+        className="text-xs text-muted-foreground hover:text-primary"
+        onClick={() => setEditing(true)}
+        aria-label="編集"
+      >
+        編集
+      </button>
+      <button
+        className="text-xs text-muted-foreground hover:text-destructive"
+        onClick={() => {
+          if (confirm(`「${a.title}」を削除しますか？`)) deleteMut.mutate();
+        }}
+        aria-label="削除"
+        disabled={deleteMut.isPending}
+      >
+        ✕
+      </button>
+    </li>
+  );
+}
+
 function MarketingActionsBlock() {
   const qc = useQueryClient();
   const { data = [], isPending } = useQuery({
@@ -1287,10 +1417,6 @@ function MarketingActionsBlock() {
       setTitle('');
       setDescription('');
     },
-  });
-  const deleteMut = useMutation({
-    mutationFn: (id: string) => deleteMarketingAction(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['marketing-actions'] }),
   });
 
   return (
@@ -1347,36 +1473,7 @@ function MarketingActionsBlock() {
         ) : (
           <ul className="space-y-2">
             {data.map((a) => (
-              <li
-                key={a.id}
-                className="flex items-start gap-3 rounded border border-border p-2 text-sm"
-              >
-                <div className="text-xs tabular-nums text-muted-foreground" style={{ minWidth: 90 }}>
-                  {a.action_date}
-                </div>
-                <span
-                  className="rounded px-2 py-0.5 text-[10px] font-medium"
-                  style={{
-                    backgroundColor: `${CATEGORY_COLOR[a.category]}26`, // 15% alpha
-                    color: CATEGORY_COLOR[a.category],
-                  }}
-                >
-                  {CATEGORY_LABEL[a.category]}
-                </span>
-                <div className="flex-1">
-                  <div className="font-medium">{a.title}</div>
-                  {a.description && (
-                    <div className="text-xs text-muted-foreground">{a.description}</div>
-                  )}
-                </div>
-                <button
-                  className="text-xs text-muted-foreground hover:text-destructive"
-                  onClick={() => deleteMut.mutate(a.id)}
-                  aria-label="削除"
-                >
-                  ✕
-                </button>
-              </li>
+              <MarketingActionRow key={a.id} a={a} />
             ))}
           </ul>
         )}
