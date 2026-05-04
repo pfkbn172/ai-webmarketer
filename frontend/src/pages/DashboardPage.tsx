@@ -27,6 +27,7 @@ import {
 } from 'recharts';
 
 import {
+  fetchAiReferrals,
   fetchChannelBreakdown,
   fetchClusterCitation,
   fetchCompetitorPatternsTop,
@@ -311,6 +312,55 @@ function ChannelBlock() {
                   <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted">
                     <div
                       className="h-full bg-primary/70"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AiReferralsBlock() {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'ai-referrals'],
+    queryFn: () => fetchAiReferrals(30),
+  });
+  const total = data.reduce((s, d) => s + d.sessions, 0);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>AI 経由の流入(過去 30 日)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            ChatGPT / Claude / Perplexity / Gemini / Copilot からの流入はまだ検出されていません。
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {data.map((d) => {
+              const pct = total > 0 ? (d.sessions / total) * 100 : 0;
+              return (
+                <li key={d.label}>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span>
+                      {d.label}{' '}
+                      <span className="text-xs text-muted-foreground">({d.source_host})</span>
+                    </span>
+                    <span className="tabular-nums">
+                      {d.sessions} ({pct.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full bg-emerald-500/70"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
@@ -718,8 +768,9 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
         <ChannelBlock />
+        <AiReferralsBlock />
         <ClusterCitationBlock />
       </div>
 

@@ -525,3 +525,74 @@ async def competitor_patterns_top(
     # candidate ラベルだけに絞って TOP 3 を返す
     out = [i for i in items if i["label"] == "candidate"][:3]
     return [CompetitorPatternMini(**i) for i in out]
+
+
+# === AI 経由の流入(GA4 sessionSource ベース)===
+
+# GA4 が返すホスト名 → 表示用ラベルへのマッピング。
+# Ga4Client.AI_REFERRAL_HOSTS と一致させること。
+_AI_HOST_LABEL: dict[str, str] = {
+    "chatgpt.com": "ChatGPT",
+    "chat.openai.com": "ChatGPT",
+    "claude.ai": "Claude",
+    "perplexity.ai": "Perplexity",
+    "www.perplexity.ai": "Perplexity",
+    "gemini.google.com": "Gemini",
+    "bard.google.com": "Gemini",
+    "copilot.microsoft.com": "Copilot",
+    "www.bing.com": "Bing/Copilot",
+}
+
+
+class AiReferralRow(BaseModel):
+    label: str
+    source_host: str
+    sessions: int
+
+
+@router.get("/ai-referrals", response_model=list[AiReferralRow])
+async def ai_referrals(
+    days: int = 30,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[AiReferralRow]:
+    """AI チャット(ChatGPT/Claude/Perplexity/Gemini/Copilot)経由のセッション。
+
+    ホスト名ごとに集計し、同じサービスに属するホスト(例: chatgpt.com と
+    chat.openai.com)はラベルでまとめる。0 件は返さない。
+    """
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    rows = (
+        await session.execute(
+            text(
+                "SELECT source_host, COALESCE(SUM(sessions), 0) AS sessions "
+                "FROM ga4_ai_referral_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY source_host "
+                "ORDER BY sessions DESC"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    # 同ラベル(例 ChatGPT)に複数ホスト(chatgpt.com / chat.openai.com)が
+    # 紐づくのでセッションを加算集約。代表 host は最大セッションのものを採用。
+    agg: dict[str, dict] = defaultdict(lambda: {"sessions": 0, "top_host": "", "top": 0})
+    for r in rows:
+        host = r.source_host
+        sessions = int(r.sessions or 0)
+        if sessions <= 0:
+            continue
+        label = _AI_HOST_LABEL.get(host, host)
+        bucket = agg[label]
+        bucket["sessions"] += sessions
+        if sessions > bucket["top"]:
+            bucket["top"] = sessions
+            bucket["top_host"] = host
+    out = [
+        AiReferralRow(label=label, source_host=v["top_host"], sessions=v["sessions"])
+        for label, v in agg.items()
+    ]
+    out.sort(key=lambda r: r.sessions, reverse=True)
+    return out

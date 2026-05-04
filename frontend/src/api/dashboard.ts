@@ -41,6 +41,8 @@ export type Objective = {
 
 export type CompetitorPatternMini = { domain: string; count: number; label: string };
 
+export type AiReferralRow = { label: string; source_host: string; sessions: number };
+
 export async function fetchClusterCitation(): Promise<ClusterCitation[]> {
   return (await apiClient.get<ClusterCitation[]>('/dashboard/cluster-citation')).data;
 }
@@ -78,5 +80,10 @@ export async function upsertObjectives(payload: {
 export async function fetchCompetitorPatternsTop(): Promise<CompetitorPatternMini[]> {
   return (
     await apiClient.get<CompetitorPatternMini[]>('/dashboard/competitor-patterns-top')
+  ).data;
+}
+export async function fetchAiReferrals(days = 30): Promise<AiReferralRow[]> {
+  return (
+    await apiClient.get<AiReferralRow[]>('/dashboard/ai-referrals', { params: { days } })
   ).data;
 }

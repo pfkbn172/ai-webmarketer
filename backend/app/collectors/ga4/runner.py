@@ -13,6 +13,7 @@ from app.collectors.google_oauth import (
     load_google_credentials,
 )
 from app.db.models.enums import CredentialProviderEnum, JobStatusEnum
+from app.db.models.ga4_ai_referral_daily import Ga4AiReferralDaily
 from app.db.models.ga4_daily_metric import Ga4DailyMetric
 from app.db.models.job_execution_log import JobExecutionLog
 from app.db.repositories.tenant_credential import TenantCredentialRepository
@@ -48,14 +49,26 @@ async def run_for_tenant(
         end = date.today() - timedelta(days=1)
         start = end - timedelta(days=days - 1)
         rows = await client.daily_metrics(start, end)
+        ai_rows = await client.ai_referrals(start, end)
 
         await _upsert_metrics(session, tenant_id, rows)
+        await _upsert_ai_referrals(session, tenant_id, ai_rows)
 
         job_log.status = JobStatusEnum.success
         job_log.finished_at = datetime.now(UTC)
-        job_log.job_metadata = {"row_count": len(rows), "start": start.isoformat(), "end": end.isoformat()}
+        job_log.job_metadata = {
+            "row_count": len(rows),
+            "ai_referral_rows": len(ai_rows),
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+        }
         await session.commit()
-        log.info("ga4_collect_done", tenant_id=str(tenant_id), rows=len(rows))
+        log.info(
+            "ga4_collect_done",
+            tenant_id=str(tenant_id),
+            rows=len(rows),
+            ai_referral_rows=len(ai_rows),
+        )
         return len(rows)
 
     except CredentialsNotFoundError as exc:
@@ -103,5 +116,31 @@ async def _upsert_metrics(session: AsyncSession, tenant_id: uuid.UUID, rows: lis
             "conversions": stmt.excluded.conversions,
             "organic_sessions": stmt.excluded.organic_sessions,
         },
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_ai_referrals(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tid, true)"),
+        {"tid": str(tenant_id)},
+    )
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "source_host": r.source_host,
+            "sessions": r.sessions,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4AiReferralDaily).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_ai_ref_tenant_date_host",
+        set_={"sessions": stmt.excluded.sessions},
     )
     await session.execute(stmt)

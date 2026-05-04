@@ -27,6 +27,7 @@ from app.db.models.enums import (
     LLMProviderEnum,
     UserRoleEnum,
 )
+from app.db.models.ga4_ai_referral_daily import Ga4AiReferralDaily
 from app.db.models.ga4_daily_metric import Ga4DailyMetric
 from app.db.models.gsc_query_metric import GscQueryMetric
 from app.db.models.inquiry import Inquiry
@@ -54,6 +55,7 @@ __all__ = [
     "ComplianceTypeEnum",
     "Content",
     "ContentMetric",
+    "Ga4AiReferralDaily",
     "Ga4DailyMetric",
     "GscQueryMetric",
     "ContentStatusEnum",

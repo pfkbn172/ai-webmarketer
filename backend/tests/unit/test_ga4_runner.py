@@ -54,6 +54,7 @@ async def test_upsert_called_with_rows(
     ]
     fake_client = MagicMock()
     fake_client.daily_metrics = AsyncMock(return_value=fake_rows)
+    fake_client.ai_referrals = AsyncMock(return_value=[])
 
     monkeypatch.setattr(ga4_runner, "load_google_credentials", fake_load)
     monkeypatch.setattr(ga4_runner, "Ga4Client", lambda *a, **kw: fake_client)

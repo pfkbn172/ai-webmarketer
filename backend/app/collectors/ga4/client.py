@@ -12,6 +12,7 @@ from google.analytics.data_v1beta.types import (
     DateRange,
     Dimension,
     FilterExpression,
+    FilterExpressionList,
     Metric,
     RunReportRequest,
 )
@@ -33,6 +34,29 @@ class Ga4DailyRow:
     bounce_rate: float | None
     conversions: int
     organic_sessions: int
+
+
+@dataclass(frozen=True, slots=True)
+class Ga4AiReferralRow:
+    date: date
+    source_host: str
+    sessions: int
+
+
+# AI チャットからの流入を判定する参照元ホスト名(GA4 sessionSource)。
+# GA4 が source として返す値は、参照元 URL のホスト名(www.* は除いた形)。
+# 値の整形は collector 側で行う。
+AI_REFERRAL_HOSTS: tuple[str, ...] = (
+    "chatgpt.com",
+    "chat.openai.com",
+    "claude.ai",
+    "perplexity.ai",
+    "www.perplexity.ai",
+    "gemini.google.com",
+    "bard.google.com",
+    "copilot.microsoft.com",
+    "www.bing.com",  # Bing Chat / Copilot 経由は bing 経由になることがある
+)
 
 
 class Ga4Client:
@@ -81,6 +105,48 @@ class Ga4Client:
             }
             for row in resp.rows
         ]
+
+    async def ai_referrals(self, start: date, end: date) -> list[Ga4AiReferralRow]:
+        """AI チャット経由の参照元ホスト × 日次セッション。
+
+        sessionSource ディメンションを取得し、AI_REFERRAL_HOSTS にマッチした行のみ返す。
+        GA4 側の値は通常ホスト名形式("chatgpt.com" 等)で返るため、ホワイトリスト判定で十分。
+        """
+        req = RunReportRequest(
+            property=self._property,
+            date_ranges=[DateRange(start_date=start.isoformat(), end_date=end.isoformat())],
+            dimensions=[Dimension(name="date"), Dimension(name="sessionSource")],
+            metrics=[Metric(name="sessions")],
+            dimension_filter=FilterExpression(
+                or_group=FilterExpressionList(
+                    expressions=[
+                        FilterExpression(
+                            filter=GaFilter(
+                                field_name="sessionSource",
+                                string_filter=GaFilter.StringFilter(
+                                    value=host, match_type=GaFilter.StringFilter.MatchType.EXACT
+                                ),
+                            ),
+                        )
+                        for host in AI_REFERRAL_HOSTS
+                    ]
+                )
+            ),
+        )
+        resp = self._client.run_report(req)
+        out: list[Ga4AiReferralRow] = []
+        for row in resp.rows:
+            sessions = int(row.metric_values[0].value or 0)
+            if sessions <= 0:
+                continue
+            out.append(
+                Ga4AiReferralRow(
+                    date=_parse_ga4_date(row.dimension_values[0].value),
+                    source_host=row.dimension_values[1].value,
+                    sessions=sessions,
+                )
+            )
+        return out
 
     def _fetch_daily_organic(self, start: date, end: date) -> dict[date, int]:
         req = RunReportRequest(
