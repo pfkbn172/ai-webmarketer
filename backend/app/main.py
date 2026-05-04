@@ -8,6 +8,7 @@ from app.api.v1 import (
     citation_manual,
     competitors,
     credentials,
+    dashboard,
     exports,
     health,
     inquiries,
@@ -48,6 +49,7 @@ app.include_router(credentials.router, prefix="/api/v1")
 app.include_router(inquiries.router, prefix="/api/v1")
 app.include_router(business_context.router, prefix="/api/v1")
 app.include_router(strategic.router, prefix="/api/v1")
+app.include_router(dashboard.router, prefix="/api/v1")
 
 # Webhook(認証不要、テナント ID は URL に含める)
 app.include_router(wh_wordpress.router, prefix="/webhook")

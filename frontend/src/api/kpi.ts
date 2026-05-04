@@ -7,6 +7,12 @@ export type KpiPoint = {
   inquiries_count: number | null;
 };
 
+export type KpiMetric = {
+  value: number;
+  prev_period_value: number;
+  delta_pct: number | null;
+};
+
 export type KpiSummary = {
   period_days: number;
   ai_citation_count: number;
@@ -14,6 +20,7 @@ export type KpiSummary = {
   inquiries_count: number;
   contents_published: number;
   series: KpiPoint[];
+  metrics: Record<string, KpiMetric>;
 };
 
 export async function fetchKpiSummary(days = 30): Promise<KpiSummary> {
