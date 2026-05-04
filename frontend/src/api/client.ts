@@ -7,8 +7,16 @@ export const apiClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// 401 を上位で扱いやすくするためにエラーをそのまま投げる
+// 401 を上位で扱いやすくするためにエラーをそのまま投げる。
+// バックエンドが返す { detail: "..." } を Error.message に昇格させて、
+// useMutation の error.message をそのまま画面に出せるようにする。
 apiClient.interceptors.response.use(
   (res) => res,
-  (err) => Promise.reject(err),
+  (err) => {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === 'string' && detail) {
+      err.message = detail;
+    }
+    return Promise.reject(err);
+  },
 );

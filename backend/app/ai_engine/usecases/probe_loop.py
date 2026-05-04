@@ -100,7 +100,7 @@ async def compare_strategy_axes(
         system_prompt="あなたは事業文脈を踏まえた戦略思考のプロです。",
         user_prompt=prompt,
         response_format="json",
-        max_tokens=4000,
+        max_tokens=8000,
         temperature=0.3,
     )
     log.info(

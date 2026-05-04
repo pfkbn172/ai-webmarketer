@@ -16,6 +16,26 @@ from app.ai_engine.providers.base import AIProvider
 from app.ai_engine.providers.schemas import ProviderError, ProviderResponse, TokenUsage
 
 
+async def _generate_with_retry(call, *, attempts: int = 3, base_delay: float = 2.0):
+    """Gemini が 503 等で一時的に失敗したら指数バックオフで再試行する。"""
+    import asyncio
+
+    last_exc: Exception | None = None
+    for i in range(attempts):
+        try:
+            return await call()
+        except Exception as exc:
+            last_exc = exc
+            if not _retriable(exc):
+                raise
+            if i == attempts - 1:
+                break
+            await asyncio.sleep(base_delay * (2**i))
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("retry loop ended without result")
+
+
 def _retriable(exc: Exception) -> bool:
     """5xx / Rate limit / Timeout はリトライ対象。"""
     msg = str(exc).lower()
@@ -49,8 +69,10 @@ class GeminiAdapter(AIProvider):
             **(extra or {}),
         )
         try:
-            resp = await self._client.aio.models.generate_content(
-                model=self.model, contents=user_prompt, config=config
+            resp = await _generate_with_retry(
+                lambda: self._client.aio.models.generate_content(
+                    model=self.model, contents=user_prompt, config=config
+                )
             )
         except Exception as exc:
             raise ProviderError(
@@ -94,8 +116,10 @@ class GeminiAdapter(AIProvider):
             **(extra or {}),
         )
         try:
-            resp = await self._client.aio.models.generate_content(
-                model=self.model, contents=user_prompt, config=config
+            resp = await _generate_with_retry(
+                lambda: self._client.aio.models.generate_content(
+                    model=self.model, contents=user_prompt, config=config
+                )
             )
         except Exception as exc:
             raise ProviderError(

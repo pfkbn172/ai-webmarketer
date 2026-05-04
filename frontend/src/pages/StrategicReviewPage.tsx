@@ -120,6 +120,11 @@ function ReviewBox() {
             <span className="text-xs text-muted-foreground">前回結果を読み込み中…</span>
           )}
         </div>
+        {review.error && (
+          <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+            生成に失敗しました: {review.error.message}。少し待って再生成してください。
+          </p>
+        )}
         {result && (
           <div className="space-y-3 text-sm">
             <Section title="構造的な発見" items={result.core_findings ?? []} />
@@ -204,6 +209,11 @@ function ProbeLoopBox() {
             <span className="text-xs text-muted-foreground">前回結果を読み込み中…</span>
           )}
         </div>
+        {probe.error && (
+          <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">
+            生成に失敗しました: {probe.error.message}。少し待って再実行してください。
+          </p>
+        )}
         {result && (
           <div className="grid gap-3 md:grid-cols-2 text-sm">
             <AxisCard label="軸 A" axis={result.axis_a} winner={result.winner === 'axis_a'} />

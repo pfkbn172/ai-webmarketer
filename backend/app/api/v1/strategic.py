@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_engine.providers.schemas import ProviderError
 from app.ai_engine.usecases.content_improvement import improve_content
 from app.ai_engine.usecases.probe_loop import compare_strategy_axes
 from app.ai_engine.usecases.strategic_review import run_strategic_review
@@ -89,7 +90,17 @@ async def post_review(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     await _set_ctx(session, tenant_id)
-    result = await run_strategic_review(session, tenant_id)
+    try:
+        result = await run_strategic_review(session, tenant_id)
+    except ProviderError as exc:
+        raise HTTPException(
+            status_code=503 if exc.retriable else 502,
+            detail=f"AI プロバイダ側で一時的なエラー: {exc}",
+        ) from None
+    if not result:
+        raise HTTPException(
+            status_code=502, detail="AI 応答を JSON として解釈できませんでした。再実行してください。"
+        )
     return await _save_to_business_context(session, tenant_id, "strategic_review", result)
 
 
@@ -108,7 +119,17 @@ async def post_probe_loop(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     await _set_ctx(session, tenant_id)
-    result = await compare_strategy_axes(session, tenant_id)
+    try:
+        result = await compare_strategy_axes(session, tenant_id)
+    except ProviderError as exc:
+        raise HTTPException(
+            status_code=503 if exc.retriable else 502,
+            detail=f"AI プロバイダ側で一時的なエラー: {exc}",
+        ) from None
+    if not result:
+        raise HTTPException(
+            status_code=502, detail="AI 応答を JSON として解釈できませんでした。再実行してください。"
+        )
     return await _save_to_business_context(session, tenant_id, "probe_loop", result)
 
 

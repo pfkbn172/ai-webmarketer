@@ -132,7 +132,7 @@ async def run_strategic_review(
         system_prompt="あなたは事業実態を踏まえる戦略コンサルタントです。",
         user_prompt=prompt,
         response_format="json",
-        max_tokens=4000,
+        max_tokens=8000,
         temperature=0.3,
     )
     log.info(
