@@ -16,7 +16,6 @@ from app.db.models.content import Content
 from app.db.models.enums import ContentStatusEnum
 from app.db.models.ga4_daily_metric import Ga4DailyMetric
 from app.db.models.inquiry import Inquiry
-from app.db.models.kpi_log import KpiLog
 
 router = APIRouter(prefix="/kpi", tags=["kpi"])
 
@@ -109,15 +108,25 @@ async def _count_contents(
     ) or 0
 
 
-def _build_series_with_ma_and_anomaly(rows: list) -> list[KpiPoint]:
-    """各 KpiLog 行に 7 日移動平均と異常値フラグを付与した KpiPoint リストを返す。
+def _build_series_with_ma_and_anomaly(
+    *,
+    start: date,
+    end: date,
+    sessions_by_date: dict[date, int],
+    citations_by_date: dict[date, int],
+    inquiries_by_date: dict[date, int],
+) -> list[KpiPoint]:
+    """期間内の各日について sessions / citations / inquiries を結合し、
+    7 日移動平均と異常値フラグを付与した KpiPoint リストを返す。
 
     異常値判定: 7 日移動平均 ± 2σ を外れたら anomaly = True(z-score > 2)。
-    最低 7 行ない場合は計算しない(False / None のまま)。
     """
-    sessions_arr: list[float] = [(r.sessions or 0) for r in rows]
+    days_count = (end - start).days + 1
+    dates = [start + timedelta(days=i) for i in range(days_count)]
+    sessions_arr: list[float] = [sessions_by_date.get(d, 0) for d in dates]
+
     out: list[KpiPoint] = []
-    for i, r in enumerate(rows):
+    for i, d in enumerate(dates):
         ma: float | None = None
         anomaly = False
         if i >= 6:
@@ -133,10 +142,10 @@ def _build_series_with_ma_and_anomaly(rows: list) -> list[KpiPoint]:
                     pass
         out.append(
             KpiPoint(
-                date=r.date,
-                sessions=r.sessions,
-                ai_citation_count=r.ai_citation_count,
-                inquiries_count=r.inquiries_count,
+                date=d,
+                sessions=int(sessions_arr[i]),
+                ai_citation_count=citations_by_date.get(d, 0),
+                inquiries_count=inquiries_by_date.get(d, 0),
                 sessions_ma7=ma,
                 is_anomaly=anomaly,
             )
@@ -147,17 +156,70 @@ def _build_series_with_ma_and_anomaly(rows: list) -> list[KpiPoint]:
 async def _sum_sessions(
     session: AsyncSession, tenant_id: uuid.UUID, start: date, end: date
 ) -> int:
-    rows = list(
+    """ga4_daily_metrics から期間合計セッションを返す。"""
+    return int(
         (
-            await session.scalars(
-                select(KpiLog).where(
-                    KpiLog.tenant_id == tenant_id,
-                    KpiLog.date.between(start, end),
+            await session.scalar(
+                select(func.coalesce(func.sum(Ga4DailyMetric.sessions), 0)).where(
+                    Ga4DailyMetric.tenant_id == tenant_id,
+                    Ga4DailyMetric.date.between(start, end),
                 )
             )
-        ).all()
+        )
+        or 0
     )
-    return sum((r.sessions or 0) for r in rows)
+
+
+async def _sessions_by_date(
+    session: AsyncSession, tenant_id: uuid.UUID, start: date, end: date
+) -> dict[date, int]:
+    rows = (
+        await session.execute(
+            select(Ga4DailyMetric.date, Ga4DailyMetric.sessions).where(
+                Ga4DailyMetric.tenant_id == tenant_id,
+                Ga4DailyMetric.date.between(start, end),
+            )
+        )
+    ).all()
+    return {r.date: int(r.sessions or 0) for r in rows}
+
+
+async def _citations_by_date(
+    session: AsyncSession, tenant_id: uuid.UUID, start: date, end: date
+) -> dict[date, int]:
+    rows = (
+        await session.execute(
+            select(
+                CitationLog.query_date, func.count(CitationLog.id).label("c")
+            )
+            .where(
+                CitationLog.tenant_id == tenant_id,
+                CitationLog.query_date.between(start, end),
+                CitationLog.self_cited.is_(True),
+            )
+            .group_by(CitationLog.query_date)
+        )
+    ).all()
+    return {r.query_date: int(r.c or 0) for r in rows}
+
+
+async def _inquiries_by_date(
+    session: AsyncSession, tenant_id: uuid.UUID, start: date, end: date
+) -> dict[date, int]:
+    rows = (
+        await session.execute(
+            select(
+                func.date(Inquiry.received_at).label("d"),
+                func.count(Inquiry.id).label("c"),
+            )
+            .where(
+                Inquiry.tenant_id == tenant_id,
+                func.date(Inquiry.received_at).between(start, end),
+            )
+            .group_by(func.date(Inquiry.received_at))
+        )
+    ).all()
+    return {r.d: int(r.c or 0) for r in rows}
 
 
 @router.get("/summary", response_model=KpiSummaryOut)
@@ -178,20 +240,17 @@ async def kpi_summary(
     yoy_end = end - timedelta(days=365)
     yoy_start = start - timedelta(days=365)
 
-    rows = list(
-        (
-            await session.scalars(
-                select(KpiLog)
-                .where(
-                    KpiLog.tenant_id == tenant_id,
-                    KpiLog.date.between(start, end),
-                )
-                .order_by(KpiLog.date)
-            )
-        ).all()
+    sessions_map = await _sessions_by_date(session, tenant_id, start, end)
+    citations_map = await _citations_by_date(session, tenant_id, start, end)
+    inquiries_map = await _inquiries_by_date(session, tenant_id, start, end)
+    series = _build_series_with_ma_and_anomaly(
+        start=start,
+        end=end,
+        sessions_by_date=sessions_map,
+        citations_by_date=citations_map,
+        inquiries_by_date=inquiries_map,
     )
-    series = _build_series_with_ma_and_anomaly(rows)
-    sessions_total = sum((r.sessions or 0) for r in rows)
+    sessions_total = sum(sessions_map.values())
     citation_total = await _count_citations(session, tenant_id, start, end)
     inq_total = await _count_inquiries(session, tenant_id, start, end)
     contents_published = await _count_contents(session, tenant_id, start, end)
