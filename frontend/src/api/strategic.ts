@@ -36,12 +36,26 @@ export async function fetchAnomalies(): Promise<Anomaly[]> {
   return (await apiClient.get<Anomaly[]>('/strategic/anomalies')).data;
 }
 
-export async function runReview(): Promise<StrategicReview> {
-  return (await apiClient.post<StrategicReview>('/strategic/review')).data;
+// 永続化されたレビュー結果のラッパ。result は StrategicReview / ProbeLoopResult、
+// generated_at は ISO8601。
+export type StoredRecord<T> = { generated_at: string; result: T };
+
+export async function runReview(): Promise<StoredRecord<StrategicReview>> {
+  return (await apiClient.post<StoredRecord<StrategicReview>>('/strategic/review')).data;
 }
 
-export async function runProbeLoop(): Promise<ProbeLoopResult> {
-  return (await apiClient.post<ProbeLoopResult>('/strategic/probe-loop')).data;
+export async function fetchLatestReview(): Promise<StoredRecord<StrategicReview> | null> {
+  return (await apiClient.get<StoredRecord<StrategicReview> | null>('/strategic/review/latest'))
+    .data;
+}
+
+export async function runProbeLoop(): Promise<StoredRecord<ProbeLoopResult>> {
+  return (await apiClient.post<StoredRecord<ProbeLoopResult>>('/strategic/probe-loop')).data;
+}
+
+export async function fetchLatestProbeLoop(): Promise<StoredRecord<ProbeLoopResult> | null> {
+  return (await apiClient.get<StoredRecord<ProbeLoopResult> | null>('/strategic/probe-loop/latest'))
+    .data;
 }
 
 export async function fetchCompetitorPatterns(days = 30): Promise<CompetitorPattern[]> {

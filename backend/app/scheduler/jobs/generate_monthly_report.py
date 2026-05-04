@@ -5,6 +5,8 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select, text
 
 from app.ai_engine.usecases.monthly_report import generate_monthly_report
+from app.ai_engine.usecases.probe_loop import compare_strategy_axes
+from app.ai_engine.usecases.strategic_review import run_strategic_review
 from app.db.models.enums import JobStatusEnum
 from app.db.models.job_execution_log import JobExecutionLog
 from app.db.models.report import Report
@@ -59,6 +61,26 @@ async def job() -> None:
                         to=settings.mail_notify_to,
                         subject=f"[{tenant.name}] 月次レポート {period}",
                         html=html,
+                    )
+
+                # 戦略レビュー + A/B 比較も同タイミングで生成して business_context に保存
+                try:
+                    review_result = await run_strategic_review(session, tenant_id)
+                    probe_result = await compare_strategy_axes(session, tenant_id)
+                    bc = dict(tenant.business_context or {})
+                    now_iso = datetime.now(UTC).isoformat()
+                    bc["strategic_review"] = {
+                        "generated_at": now_iso,
+                        "result": review_result,
+                    }
+                    bc["probe_loop"] = {
+                        "generated_at": now_iso,
+                        "result": probe_result,
+                    }
+                    tenant.business_context = bc
+                except Exception:
+                    log.exception(
+                        "monthly_strategic_failed", tenant_id=str(tenant_id)
                     )
 
                 jl.status = JobStatusEnum.success
