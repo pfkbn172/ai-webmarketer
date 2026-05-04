@@ -50,6 +50,7 @@ import {
 } from '@/api/dashboard';
 import { fetchKpiSummary, type KpiMetric, type KpiSummary } from '@/api/kpi';
 import {
+  CATEGORY_COLOR,
   CATEGORY_LABEL,
   createMarketingAction,
   deleteMarketingAction,
@@ -126,7 +127,12 @@ function TrendTooltip(props: {
     value?: number | string;
     color?: string;
     payload?: {
-      actions?: { id: string; title: string; category: string; description: string | null }[];
+      actions?: {
+        id: string;
+        title: string;
+        category: MarketingActionCategory;
+        description: string | null;
+      }[];
     };
   }>;
 }) {
@@ -152,8 +158,14 @@ function TrendTooltip(props: {
           <div className="mb-1 text-[10px] text-muted-foreground">施策 {actions.length} 件</div>
           {actions.map((a) => (
             <div key={a.id} className="mb-1">
-              <div className="font-medium" style={{ color: '#8b5cf6' }}>
-                ▲ {a.title}
+              <div
+                className="font-medium"
+                style={{ color: CATEGORY_COLOR[a.category] }}
+              >
+                ● {a.title}
+                <span className="ml-1 text-[10px] opacity-70">
+                  [{CATEGORY_LABEL[a.category]}]
+                </span>
               </div>
               {a.description && (
                 <div className="text-[10px] text-muted-foreground">{a.description}</div>
@@ -1342,7 +1354,13 @@ function MarketingActionsBlock() {
                 <div className="text-xs tabular-nums text-muted-foreground" style={{ minWidth: 90 }}>
                   {a.action_date}
                 </div>
-                <span className="rounded bg-violet-500/15 px-2 py-0.5 text-[10px] text-violet-700 dark:text-violet-300">
+                <span
+                  className="rounded px-2 py-0.5 text-[10px] font-medium"
+                  style={{
+                    backgroundColor: `${CATEGORY_COLOR[a.category]}26`, // 15% alpha
+                    color: CATEGORY_COLOR[a.category],
+                  }}
+                >
                   {CATEGORY_LABEL[a.category]}
                 </span>
                 <div className="flex-1">
@@ -1472,6 +1490,18 @@ export default function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle>セッション・引用推移(7 日移動平均 + 異常値ハイライト)</CardTitle>
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+            <span className="font-medium">施策の色:</span>
+            {(Object.keys(CATEGORY_LABEL) as MarketingActionCategory[]).map((k) => (
+              <span key={k} className="inline-flex items-center gap-1">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ backgroundColor: CATEGORY_COLOR[k] }}
+                />
+                {CATEGORY_LABEL[k]}
+              </span>
+            ))}
+          </div>
         </CardHeader>
         <CardContent>
           {isPending ? (
@@ -1545,7 +1575,8 @@ export default function DashboardPage() {
                   stroke="hsl(var(--destructive))"
                   dot={false}
                 />
-                {/* 施策マーカー: セッション線の上に紫▲を載せる。stroke は透明にして線は見せない */}
+                {/* 施策マーカー: セッション線の上に丸を載せる。色はカテゴリ準拠。
+                    同日複数カテゴリの場合は最初の施策の色を採用(全件はツールチップに出る)。 */}
                 <Line
                   type="monotone"
                   dataKey="sessions"
@@ -1557,20 +1588,26 @@ export default function DashboardPage() {
                   dot={(props: {
                     cx?: number;
                     cy?: number;
-                    payload?: { actions_count?: number };
+                    payload?: {
+                      actions_count?: number;
+                      actions?: { category: MarketingActionCategory }[];
+                    };
                     index?: number;
                   }) => {
                     const { cx, cy, payload, index } = props;
                     if (cx === undefined || cy === undefined || !payload?.actions_count) {
                       return <g key={`act-empty-${index ?? ''}`} />;
                     }
+                    const cat = payload.actions?.[0]?.category ?? 'other';
                     return (
-                      <polygon
+                      <circle
                         key={`act-${index ?? ''}`}
-                        points={`${cx},${cy - 9} ${cx - 7},${cy + 4} ${cx + 7},${cy + 4}`}
-                        fill="#8b5cf6"
+                        cx={cx}
+                        cy={cy}
+                        r={6}
+                        fill={CATEGORY_COLOR[cat]}
                         stroke="white"
-                        strokeWidth={1}
+                        strokeWidth={1.5}
                       />
                     );
                   }}
