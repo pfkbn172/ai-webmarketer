@@ -87,6 +87,62 @@ export type AlertRule = {
   enabled: boolean;
 };
 
+export type CvPathRow = {
+  channel: string;
+  sessions: number;
+  inquiries: number;
+  cv_rate: number | null;
+};
+
+export type PageRankDecayRow = {
+  page: string;
+  title: string | null;
+  avg_position_recent: number | null;
+  avg_position_baseline: number | null;
+  delta: number | null;
+  impressions_recent: number;
+};
+
+export type BrandSearchPoint = {
+  period: string;
+  impressions: number;
+  clicks: number;
+};
+
+export type IntentRow = {
+  intent: 'transactional' | 'navigational' | 'informational' | 'other';
+  impressions: number;
+  clicks: number;
+  queries: number;
+  avg_position: number | null;
+};
+
+export type SeasonalityCell = {
+  weekday: number;
+  month: number;
+  avg_sessions: number;
+  samples: number;
+};
+
+export type AreaPerformance = {
+  cluster_id: string;
+  impressions: number;
+  clicks: number;
+  avg_position: number | null;
+  citation_rate: number;
+  queries: number;
+};
+
+export type PageSpeedRow = {
+  page_url: string;
+  strategy: 'mobile' | 'desktop';
+  performance_score: number | null;
+  lcp_ms: number | null;
+  cls: number | null;
+  inp_ms: number | null;
+  measured_at: string;
+};
+
 export async function fetchClusterCitation(days = 30): Promise<ClusterCitation[]> {
   return (
     await apiClient.get<ClusterCitation[]>('/dashboard/cluster-citation', {
@@ -187,4 +243,30 @@ export async function fetchAlertRules(): Promise<AlertRule[]> {
 }
 export async function replaceAlertRules(items: AlertRule[]): Promise<AlertRule[]> {
   return (await apiClient.put<AlertRule[]>('/dashboard/alert-rules', { items })).data;
+}
+export async function fetchCvPaths(days = 90): Promise<CvPathRow[]> {
+  return (await apiClient.get<CvPathRow[]>('/dashboard/cv-paths', { params: { days } })).data;
+}
+export async function fetchPageRankDecay(limit = 20): Promise<PageRankDecayRow[]> {
+  return (await apiClient.get<PageRankDecayRow[]>('/dashboard/page-rank-decay', { params: { limit } }))
+    .data;
+}
+export async function fetchBrandSearch(months = 12): Promise<BrandSearchPoint[]> {
+  return (await apiClient.get<BrandSearchPoint[]>('/dashboard/brand-search', { params: { months } }))
+    .data;
+}
+export async function fetchSearchIntent(days = 90): Promise<IntentRow[]> {
+  return (await apiClient.get<IntentRow[]>('/dashboard/search-intent', { params: { days } })).data;
+}
+export async function fetchSeasonality(months = 18): Promise<SeasonalityCell[]> {
+  return (await apiClient.get<SeasonalityCell[]>('/dashboard/seasonality', { params: { months } }))
+    .data;
+}
+export async function fetchAreaPerformance(days = 90): Promise<AreaPerformance[]> {
+  return (
+    await apiClient.get<AreaPerformance[]>('/dashboard/area-performance', { params: { days } })
+  ).data;
+}
+export async function fetchPageSpeed(): Promise<PageSpeedRow[]> {
+  return (await apiClient.get<PageSpeedRow[]>('/dashboard/page-speed')).data;
 }

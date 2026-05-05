@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     perplexity_api_key: str = Field(default="")
     serpapi_key: str = Field(default="")
 
+    # Google PageSpeed Insights v5 用 API キー(無料・キーのみ)
+    pagespeed_api_key: str = Field(default="")
+
     resend_api_key: str = Field(default="")
     mail_from: str = Field(default="marketer@kiseeeen.co.jp")
     mail_notify_to: str = Field(default="")

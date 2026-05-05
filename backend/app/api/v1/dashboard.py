@@ -1070,3 +1070,569 @@ async def replace_alert_rules(
     tenant.business_context = bc
     await session.commit()
     return body.items
+
+
+# === A. CV 経路マトリクス(流入元 × LP × CV)===
+# 「どのチャネルから来た人が、どのページで、どれくらい問い合わせたか」を
+# inquiries.received_at × ai_referrals × ga4_page_daily の同日対応で集計する近似。
+
+
+class CvPathRow(BaseModel):
+    channel: str  # 'AI Chat' | 'Organic Search' | 'Direct/Other'
+    sessions: int
+    inquiries: int
+    cv_rate: float | None  # 0〜1
+
+
+@router.get("/cv-paths", response_model=list[CvPathRow])
+async def cv_paths(
+    days: int = 90,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[CvPathRow]:
+    """流入チャネル別のセッション数と CV 数。inquiries は来訪日が紐付かないため、
+    日次セッションで按分して概算する(本格的な multi-touch は GA4 BQ Export が必要)。"""
+    from app.db.models.inquiry import Inquiry as _Inq
+
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    total_sessions = int(
+        (
+            await session.execute(
+                text(
+                    "SELECT COALESCE(SUM(sessions),0) FROM ga4_daily_metrics "
+                    "WHERE tenant_id = :tid AND date BETWEEN :s AND :e"
+                ),
+                {"tid": str(tenant_id), "s": start, "e": end},
+            )
+        ).scalar()
+        or 0
+    )
+    organic_sessions = int(
+        (
+            await session.execute(
+                text(
+                    "SELECT COALESCE(SUM(organic_sessions),0) FROM ga4_daily_metrics "
+                    "WHERE tenant_id = :tid AND date BETWEEN :s AND :e"
+                ),
+                {"tid": str(tenant_id), "s": start, "e": end},
+            )
+        ).scalar()
+        or 0
+    )
+    ai_sessions = int(
+        (
+            await session.execute(
+                text(
+                    "SELECT COALESCE(SUM(sessions),0) FROM ga4_ai_referral_daily "
+                    "WHERE tenant_id = :tid AND date BETWEEN :s AND :e"
+                ),
+                {"tid": str(tenant_id), "s": start, "e": end},
+            )
+        ).scalar()
+        or 0
+    )
+    other = max(0, total_sessions - organic_sessions - ai_sessions)
+
+    inq_total = (
+        await session.scalar(
+            select(func.count(_Inq.id)).where(
+                _Inq.tenant_id == tenant_id,
+                func.date(_Inq.received_at).between(start, end),
+            )
+        )
+    ) or 0
+    # チャネル別 inquiries を按分(セッション割合) — 概算用
+    def _alloc(sess: int) -> int:
+        if total_sessions <= 0:
+            return 0
+        return round(inq_total * sess / total_sessions)
+
+    rows = [
+        ("AI Chat", ai_sessions),
+        ("Organic Search", organic_sessions),
+        ("Direct/Other", other),
+    ]
+    out: list[CvPathRow] = []
+    for ch, sess in rows:
+        cv = _alloc(sess)
+        rate = (cv / sess) if sess > 0 else None
+        out.append(
+            CvPathRow(
+                channel=ch,
+                sessions=sess,
+                inquiries=cv,
+                cv_rate=round(rate, 4) if rate is not None else None,
+            )
+        )
+    return out
+
+
+# === B. 既存記事の順位劣化テーブル ===
+
+
+class PageRankDecayRow(BaseModel):
+    page: str
+    title: str | None
+    avg_position_recent: float | None
+    avg_position_baseline: float | None
+    delta: float | None  # baseline - recent. 正なら下落
+    impressions_recent: int
+
+
+@router.get("/page-rank-decay", response_model=list[PageRankDecayRow])
+async def page_rank_decay(
+    recent_days: int = 14,
+    baseline_days: int = 30,  # baseline = 直近 (recent_days+baseline_days) 〜 直近 recent_days の窓
+    limit: int = 20,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[PageRankDecayRow]:
+    """ページ単位で、直近期間と比較期間の平均順位差を計算。下落が大きい順に返す。"""
+    from app.db.models.content import Content as _Content
+
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    recent_start = end - timedelta(days=recent_days - 1)
+    base_end = recent_start - timedelta(days=1)
+    base_start = base_end - timedelta(days=baseline_days - 1)
+
+    # 直近の集計
+    recent_rows = (
+        await session.execute(
+            text(
+                "SELECT page, AVG(position) AS pos, COALESCE(SUM(impressions),0) AS imp "
+                "FROM gsc_page_metrics "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY page"
+            ),
+            {"tid": str(tenant_id), "s": recent_start, "e": end},
+        )
+    ).all()
+    base_rows = (
+        await session.execute(
+            text(
+                "SELECT page, AVG(position) AS pos FROM gsc_page_metrics "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY page"
+            ),
+            {"tid": str(tenant_id), "s": base_start, "e": base_end},
+        )
+    ).all()
+    base_map = {r.page: float(r.pos) if r.pos is not None else None for r in base_rows}
+
+    contents = list(
+        (await session.scalars(select(_Content).where(_Content.tenant_id == tenant_id))).all()
+    )
+    title_map: dict[str, str] = {}
+    import urllib.parse as _u
+
+    for c in contents:
+        if c.url:
+            title_map[c.url] = c.title or ""
+            try:
+                p = _u.urlparse(c.url).path
+                if p:
+                    title_map[p] = c.title or ""
+            except ValueError:
+                pass
+
+    out: list[PageRankDecayRow] = []
+    for r in recent_rows:
+        recent_pos = float(r.pos) if r.pos is not None else None
+        base_pos = base_map.get(r.page)
+        delta = (
+            round(recent_pos - base_pos, 1)
+            if recent_pos is not None and base_pos is not None
+            else None
+        )
+        try:
+            path = _u.urlparse(r.page).path or r.page
+        except ValueError:
+            path = r.page
+        out.append(
+            PageRankDecayRow(
+                page=r.page,
+                title=title_map.get(r.page) or title_map.get(path),
+                avg_position_recent=round(recent_pos, 1) if recent_pos is not None else None,
+                avg_position_baseline=round(base_pos, 1) if base_pos is not None else None,
+                delta=delta,
+                impressions_recent=int(r.imp or 0),
+            )
+        )
+    # 下落順(delta が大きい = 順位が悪化)
+    out = [o for o in out if o.delta is not None and o.delta > 0]
+    out.sort(key=lambda r: (r.delta or 0, r.impressions_recent), reverse=True)
+    return out[:limit]
+
+
+# === C. ブランド検索ボリューム推移 ===
+
+
+class BrandSearchPoint(BaseModel):
+    period: str  # 'YYYY-MM'
+    impressions: int
+    clicks: int
+
+
+@router.get("/brand-search", response_model=list[BrandSearchPoint])
+async def brand_search(
+    months: int = 12,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[BrandSearchPoint]:
+    """tenants.business_context.brand_terms または site_url のホスト名から推定したブランド語を含む
+    クエリの月次合計。"""
+    await _set_ctx(session, tenant_id)
+    tenant = (
+        await session.scalars(select(Tenant).where(Tenant.id == tenant_id))
+    ).one()
+    bc = tenant.business_context or {}
+    brand_terms_raw = bc.get("brand_terms")
+    if isinstance(brand_terms_raw, list) and brand_terms_raw:
+        terms: list[str] = [str(t).lower() for t in brand_terms_raw if t]
+    else:
+        # フォールバック: ドメイン名/テナント名から推定
+        import contextlib
+        import urllib.parse as _u
+
+        site = bc.get("site_url") or ""
+        host = ""
+        with contextlib.suppress(ValueError):
+            host = _u.urlparse(site).netloc.lower().split(".")[0]
+        terms = [t for t in [tenant.name.lower() if tenant.name else "", host] if t]
+
+    if not terms:
+        return []
+
+    end = date.today()
+    start = end - timedelta(days=months * 31)
+    like_clauses = " OR ".join([f"LOWER(query_text) LIKE :t{i}" for i in range(len(terms))])
+    params: dict = {"tid": str(tenant_id), "s": start, "e": end}
+    for i, t in enumerate(terms):
+        params[f"t{i}"] = f"%{t}%"
+    rows = (
+        await session.execute(
+            text(
+                "SELECT to_char(date, 'YYYY-MM') AS period, "
+                "COALESCE(SUM(impressions),0) AS imp, "
+                "COALESCE(SUM(clicks),0) AS clk "
+                "FROM gsc_query_metrics "
+                f"WHERE tenant_id = :tid AND date BETWEEN :s AND :e AND ({like_clauses}) "
+                "GROUP BY period ORDER BY period"
+            ),
+            params,
+        )
+    ).all()
+    return [
+        BrandSearchPoint(
+            period=r.period, impressions=int(r.imp or 0), clicks=int(r.clk or 0)
+        )
+        for r in rows
+    ]
+
+
+# === D. 検索意図分類 ===
+
+# ヒューリスティック: クエリのキーワードから意図を推定。
+# AI 分類は精度が高いがコストがかかるので、まずキーワード辞書ベース。
+
+_INTENT_RULES: list[tuple[str, list[str]]] = [
+    (
+        "transactional",
+        [
+            "おすすめ", "比較", "ランキング", "口コミ", "料金", "価格", "費用",
+            "見積", "問い合わせ", "依頼", "発注", "申込", "購入", "業者",
+            "会社", "サービス", "事業者", "プロ",
+        ],
+    ),
+    (
+        "navigational",
+        ["とは何", "とは？", "意味", "違い", "やり方", "方法", "手順", "始め方", "使い方"],
+    ),
+    (
+        "informational",
+        [
+            "とは", "メリット", "デメリット", "事例", "効果", "活用", "理由",
+            "原因", "種類", "一覧",
+        ],
+    ),
+]
+
+
+def _classify_intent(query: str) -> str:
+    q = query.lower()
+    for intent, kws in _INTENT_RULES:
+        for kw in kws:
+            if kw in q:
+                return intent
+    return "other"
+
+
+class IntentRow(BaseModel):
+    intent: str
+    impressions: int
+    clicks: int
+    queries: int
+    avg_position: float | None
+
+
+@router.get("/search-intent", response_model=list[IntentRow])
+async def search_intent(
+    days: int = 90,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[IntentRow]:
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    rows = (
+        await session.execute(
+            select(
+                GscQueryMetric.query_text,
+                func.sum(GscQueryMetric.impressions).label("imp"),
+                func.sum(GscQueryMetric.clicks).label("clk"),
+                func.avg(GscQueryMetric.position).label("pos"),
+            )
+            .where(
+                GscQueryMetric.tenant_id == tenant_id,
+                GscQueryMetric.date.between(start, end),
+            )
+            .group_by(GscQueryMetric.query_text)
+        )
+    ).all()
+
+    by_intent: dict[str, dict] = defaultdict(
+        lambda: {"imp": 0, "clk": 0, "n": 0, "pos_sum": 0.0, "pos_n": 0}
+    )
+    for r in rows:
+        intent = _classify_intent(r.query_text or "")
+        bucket = by_intent[intent]
+        bucket["imp"] += int(r.imp or 0)
+        bucket["clk"] += int(r.clk or 0)
+        bucket["n"] += 1
+        if r.pos is not None:
+            bucket["pos_sum"] += float(r.pos)
+            bucket["pos_n"] += 1
+
+    out: list[IntentRow] = []
+    for intent in ("transactional", "navigational", "informational", "other"):
+        v = by_intent.get(intent)
+        if not v:
+            continue
+        avg_pos = (v["pos_sum"] / v["pos_n"]) if v["pos_n"] > 0 else None
+        out.append(
+            IntentRow(
+                intent=intent,
+                impressions=v["imp"],
+                clicks=v["clk"],
+                queries=v["n"],
+                avg_position=round(avg_pos, 1) if avg_pos is not None else None,
+            )
+        )
+    return out
+
+
+# === E. 季節性ヒートマップ(曜日 × 月)===
+
+
+class SeasonalityCell(BaseModel):
+    weekday: int  # 0=月 ... 6=日
+    month: int  # 1..12
+    avg_sessions: float
+    samples: int
+
+
+@router.get("/seasonality", response_model=list[SeasonalityCell])
+async def seasonality(
+    months: int = 18,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[SeasonalityCell]:
+    """ga4_daily_metrics を曜日 × 月でグルーピングして平均セッションを返す。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=months * 31)
+    rows = (
+        await session.execute(
+            text(
+                # PostgreSQL extract: dow=0(日)..6(土)。0=月 表記に変換するため (dow+6)%7
+                "SELECT ((EXTRACT(DOW FROM date)::int + 6) % 7) AS weekday, "
+                "EXTRACT(MONTH FROM date)::int AS month, "
+                "AVG(sessions)::float AS avg_sessions, COUNT(*) AS samples "
+                "FROM ga4_daily_metrics "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY weekday, month "
+                "ORDER BY month, weekday"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    return [
+        SeasonalityCell(
+            weekday=int(r.weekday),
+            month=int(r.month),
+            avg_sessions=round(float(r.avg_sessions or 0), 1),
+            samples=int(r.samples or 0),
+        )
+        for r in rows
+    ]
+
+
+# === F. エリア別パフォーマンス ===
+
+
+class AreaPerformance(BaseModel):
+    cluster_id: str
+    impressions: int
+    clicks: int
+    avg_position: float | None
+    citation_rate: float
+    queries: int
+
+
+@router.get("/area-performance", response_model=list[AreaPerformance])
+async def area_performance(
+    days: int = 90,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[AreaPerformance]:
+    """target_queries.cluster_id ごとに impressions/clicks/順位/AI 引用率を集計。
+    地域戦略(local_district_hq / local_radius / geo_intent / industry_local)の検証に使う。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    queries = list(
+        (
+            await session.scalars(
+                select(TargetQuery).where(TargetQuery.tenant_id == tenant_id)
+            )
+        ).all()
+    )
+    if not queries:
+        return []
+    cluster_by_text = {q.query_text: q.cluster_id or "unknown" for q in queries}
+    qid_by_text = {q.query_text: q.id for q in queries}
+
+    # GSC は target_queries 限定で集計
+    query_texts = list(cluster_by_text.keys())
+    if not query_texts:
+        return []
+    gsc_rows = (
+        await session.execute(
+            select(
+                GscQueryMetric.query_text,
+                func.sum(GscQueryMetric.impressions).label("imp"),
+                func.sum(GscQueryMetric.clicks).label("clk"),
+                func.avg(GscQueryMetric.position).label("pos"),
+            )
+            .where(
+                GscQueryMetric.tenant_id == tenant_id,
+                GscQueryMetric.date.between(start, end),
+                GscQueryMetric.query_text.in_(query_texts),
+            )
+            .group_by(GscQueryMetric.query_text)
+        )
+    ).all()
+
+    citation_rows = list(
+        (
+            await session.scalars(
+                select(CitationLog).where(
+                    CitationLog.tenant_id == tenant_id,
+                    CitationLog.query_date.between(start, end),
+                )
+            )
+        ).all()
+    )
+    cite_by_qid: dict = defaultdict(lambda: [0, 0])
+    for c in citation_rows:
+        cell = cite_by_qid[c.query_id]
+        cell[1] += 1
+        if c.self_cited:
+            cell[0] += 1
+
+    by_cluster: dict[str, dict] = defaultdict(
+        lambda: {"imp": 0, "clk": 0, "pos_sum": 0.0, "pos_n": 0, "cite_self": 0, "cite_total": 0, "n": 0}
+    )
+    for r in gsc_rows:
+        cluster = cluster_by_text.get(r.query_text or "", "unknown")
+        b = by_cluster[cluster]
+        b["imp"] += int(r.imp or 0)
+        b["clk"] += int(r.clk or 0)
+        if r.pos is not None:
+            b["pos_sum"] += float(r.pos) * int(r.imp or 0)
+            b["pos_n"] += int(r.imp or 0)
+        b["n"] += 1
+        qid = qid_by_text.get(r.query_text or "")
+        if qid:
+            cite = cite_by_qid.get(qid, [0, 0])
+            b["cite_self"] += cite[0]
+            b["cite_total"] += cite[1]
+
+    out: list[AreaPerformance] = []
+    for cluster, v in by_cluster.items():
+        avg_pos = (v["pos_sum"] / v["pos_n"]) if v["pos_n"] > 0 else None
+        rate = (v["cite_self"] / v["cite_total"]) if v["cite_total"] > 0 else 0.0
+        out.append(
+            AreaPerformance(
+                cluster_id=cluster,
+                impressions=v["imp"],
+                clicks=v["clk"],
+                avg_position=round(avg_pos, 1) if avg_pos is not None else None,
+                citation_rate=round(rate, 4),
+                queries=v["n"],
+            )
+        )
+    out.sort(key=lambda r: r.impressions, reverse=True)
+    return out
+
+
+# === G. PageSpeed Insights 直近結果 ===
+
+
+class PageSpeedRow(BaseModel):
+    page_url: str
+    strategy: str
+    performance_score: int | None
+    lcp_ms: int | None
+    cls: float | None
+    inp_ms: int | None
+    measured_at: date
+
+
+@router.get("/page-speed", response_model=list[PageSpeedRow])
+async def page_speed(
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[PageSpeedRow]:
+    """各 URL × strategy の最新計測結果を返す。"""
+    await _set_ctx(session, tenant_id)
+    rows = (
+        await session.execute(
+            text(
+                "SELECT DISTINCT ON (page_url, strategy) "
+                "page_url, strategy, performance_score, lcp_ms, cls, inp_ms, date "
+                "FROM page_speed_metrics "
+                "WHERE tenant_id = :tid "
+                "ORDER BY page_url, strategy, date DESC"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).all()
+    return [
+        PageSpeedRow(
+            page_url=r.page_url,
+            strategy=r.strategy,
+            performance_score=r.performance_score,
+            lcp_ms=r.lcp_ms,
+            cls=float(r.cls) if r.cls is not None else None,
+            inp_ms=r.inp_ms,
+            measured_at=r.date,
+        )
+        for r in rows
+    ]

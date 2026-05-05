@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.scheduler.jobs.collect_competitor_rss import job as job_competitor_rss
 from app.scheduler.jobs.collect_ga4 import job as job_ga4
 from app.scheduler.jobs.collect_gsc import job as job_gsc
+from app.scheduler.jobs.collect_pagespeed import job as job_pagespeed
 from app.scheduler.jobs.evaluate_alerts import job as job_alerts
 from app.scheduler.jobs.generate_monthly_report import job as job_monthly
 from app.scheduler.jobs.generate_weekly_summary import job as job_weekly
@@ -33,6 +34,8 @@ SCHEDULE = {
     "generate_monthly_report": CronTrigger(day=3, hour=7, minute=0, timezone="Asia/Tokyo"),
     # アラートは GSC/GA4 取り込み後の月曜 6:30
     "evaluate_alerts": CronTrigger(day_of_week="mon", hour=6, minute=30, timezone="Asia/Tokyo"),
+    # PageSpeed Insights は GSC 取り込み後、TOP URL を計測(月曜 5:30)
+    "collect_pagespeed": CronTrigger(day_of_week="mon", hour=5, minute=30, timezone="Asia/Tokyo"),
 }
 
 
@@ -51,5 +54,6 @@ def build_scheduler() -> AsyncIOScheduler:
         job_monthly, SCHEDULE["generate_monthly_report"], id="generate_monthly_report"
     )
     scheduler.add_job(job_alerts, SCHEDULE["evaluate_alerts"], id="evaluate_alerts")
+    scheduler.add_job(job_pagespeed, SCHEDULE["collect_pagespeed"], id="collect_pagespeed")
     log.info("scheduler_built", jobs=list(SCHEDULE.keys()))
     return scheduler

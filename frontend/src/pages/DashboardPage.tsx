@@ -29,16 +29,23 @@ import {
 import {
   fetchAiReferrals,
   fetchAlertRules,
+  fetchAreaPerformance,
+  fetchBrandSearch,
   fetchChannelBreakdown,
   fetchClusterCitation,
   fetchCompetitorContent,
   fetchCompetitorPatternsTop,
+  fetchCvPaths,
   fetchFunnel,
   fetchHeatmap,
   fetchKeywordOpportunity,
   fetchNextActions,
   fetchObjectives,
   fetchPagePerformance,
+  fetchPageRankDecay,
+  fetchPageSpeed,
+  fetchSearchIntent,
+  fetchSeasonality,
   fetchTopQueries,
   generateNextActionsWithAi,
   replaceAlertRules,
@@ -1262,6 +1269,427 @@ function ReportsBlock() {
   );
 }
 
+function CvPathsBlock({ days }: { days: number }) {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'cv-paths', days],
+    queryFn: () => fetchCvPaths(Math.max(days, 30)),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>流入チャネル別 CV(過去 {Math.max(days, 30)} 日・按分概算)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">データがありません。</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground">
+              <tr>
+                <th className="py-1">チャネル</th>
+                <th className="py-1 text-right">セッション</th>
+                <th className="py-1 text-right">CV</th>
+                <th className="py-1 text-right">CV 率</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((c) => (
+                <tr key={c.channel} className="border-t border-border">
+                  <td className="py-1">{c.channel}</td>
+                  <td className="py-1 text-right tabular-nums">{c.sessions}</td>
+                  <td className="py-1 text-right tabular-nums">{c.inquiries}</td>
+                  <td className="py-1 text-right tabular-nums">
+                    {c.cv_rate === null ? '—' : `${(c.cv_rate * 100).toFixed(2)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="mt-2 text-[10px] text-muted-foreground">
+          ※ inquiry の正確な参照元が記録されていないため、セッション割合で按分した概算値です。
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PageRankDecayBlock() {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'page-rank-decay'],
+    queryFn: () => fetchPageRankDecay(20),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>順位下落ページ TOP 20(直近 14 日 vs その前 30 日)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            順位下落しているページは検出されていません(GSC データが揃ったら表示されます)。
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="py-1">ページ</th>
+                  <th className="py-1 text-right">直近順位</th>
+                  <th className="py-1 text-right">基準順位</th>
+                  <th className="py-1 text-right">下落幅</th>
+                  <th className="py-1 text-right">直近表示</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((r) => (
+                  <tr key={r.page} className="border-t border-border">
+                    <td className="py-1 max-w-[18rem] truncate">
+                      <span className="font-medium">{r.title || r.page}</span>
+                      <div className="text-[10px] text-muted-foreground truncate">{r.page}</div>
+                    </td>
+                    <td className="py-1 text-right tabular-nums">
+                      {r.avg_position_recent?.toFixed(1) ?? '—'}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">
+                      {r.avg_position_baseline?.toFixed(1) ?? '—'}
+                    </td>
+                    <td className="py-1 text-right tabular-nums text-rose-600 dark:text-rose-400">
+                      {r.delta !== null ? `+${r.delta.toFixed(1)}` : '—'}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">{r.impressions_recent}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function BrandSearchBlock() {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'brand-search'],
+    queryFn: () => fetchBrandSearch(12),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>ブランド検索ボリューム(月次・直近 12 ヶ月)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            ブランド名(社名・ドメイン)を含むクエリの GSC データがまだありません。
+          </p>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="period" stroke="hsl(var(--muted-foreground))" fontSize={10} />
+              <YAxis stroke="hsl(var(--muted-foreground))" />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: 'hsl(var(--card))',
+                  border: '1px solid hsl(var(--border))',
+                  color: 'hsl(var(--card-foreground))',
+                }}
+              />
+              <Line
+                type="monotone"
+                dataKey="impressions"
+                name="表示"
+                stroke="hsl(var(--primary))"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="clicks"
+                name="クリック"
+                stroke="hsl(var(--destructive))"
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const INTENT_LABEL: Record<string, string> = {
+  transactional: '取引型(おすすめ・比較・依頼)',
+  navigational: 'ナビ型(やり方・始め方)',
+  informational: '情報収集型(とは・事例)',
+  other: 'その他',
+};
+
+function SearchIntentBlock({ days }: { days: number }) {
+  const effective = Math.max(days, 30);
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'search-intent', effective],
+    queryFn: () => fetchSearchIntent(effective),
+  });
+  const totalImp = data.reduce((s, d) => s + d.impressions, 0);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>検索意図の分布(過去 {effective} 日)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">GSC データがまだありません。</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground">
+              <tr>
+                <th className="py-1">意図</th>
+                <th className="py-1 text-right">表示</th>
+                <th className="py-1 text-right">CL</th>
+                <th className="py-1 text-right">クエリ数</th>
+                <th className="py-1 text-right">平均順位</th>
+                <th className="py-1 text-right">構成比</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((r) => (
+                <tr key={r.intent} className="border-t border-border">
+                  <td className="py-1">{INTENT_LABEL[r.intent] ?? r.intent}</td>
+                  <td className="py-1 text-right tabular-nums">{r.impressions}</td>
+                  <td className="py-1 text-right tabular-nums">{r.clicks}</td>
+                  <td className="py-1 text-right tabular-nums">{r.queries}</td>
+                  <td className="py-1 text-right tabular-nums">
+                    {r.avg_position?.toFixed(1) ?? '—'}
+                  </td>
+                  <td className="py-1 text-right tabular-nums">
+                    {totalImp > 0 ? `${((r.impressions / totalImp) * 100).toFixed(0)}%` : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const WEEKDAY_JP = ['月', '火', '水', '木', '金', '土', '日'];
+
+function SeasonalityBlock() {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'seasonality'],
+    queryFn: () => fetchSeasonality(18),
+  });
+  // 12 month × 7 weekday マトリクスに展開
+  const grid: Record<string, number> = {};
+  let max = 0;
+  for (const c of data) {
+    const k = `${c.month}-${c.weekday}`;
+    grid[k] = c.avg_sessions;
+    if (c.avg_sessions > max) max = c.avg_sessions;
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>季節性ヒートマップ(曜日 × 月の平均セッション)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">データがまだ蓄積されていません。</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr>
+                  <th className="py-1 text-left text-muted-foreground">月＼曜日</th>
+                  {WEEKDAY_JP.map((d) => (
+                    <th key={d} className="px-1 py-1 text-center text-muted-foreground">
+                      {d}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <tr key={m}>
+                    <td className="py-0.5 pr-2 text-muted-foreground">{m} 月</td>
+                    {WEEKDAY_JP.map((_, w) => {
+                      const v = grid[`${m}-${w}`];
+                      const ratio = max > 0 && v ? v / max : 0;
+                      const bg = v
+                        ? `rgba(99, 102, 241, ${0.1 + ratio * 0.7})`
+                        : 'transparent';
+                      return (
+                        <td key={w} className="px-0.5 py-0.5 text-center">
+                          <div
+                            className="rounded px-1 py-1 tabular-nums"
+                            style={{ backgroundColor: bg }}
+                            title={v ? `${v} セッション/日` : 'データなし'}
+                          >
+                            {v ? Math.round(v) : '—'}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const AREA_LABEL: Record<string, string> = {
+  local_district_hq: '本拠地(平野区)',
+  local_radius: '半径10km圏',
+  geo_intent: '距離意図',
+  industry_local: '地域×業種',
+  competitive: '競合比較',
+};
+
+function AreaPerformanceBlock({ days }: { days: number }) {
+  const effective = Math.max(days, 30);
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'area-performance', effective],
+    queryFn: () => fetchAreaPerformance(effective),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>エリア別パフォーマンス(過去 {effective} 日)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            ターゲットクエリの GSC データがまだ十分にありません。
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground">
+              <tr>
+                <th className="py-1">クラスタ</th>
+                <th className="py-1 text-right">表示</th>
+                <th className="py-1 text-right">CL</th>
+                <th className="py-1 text-right">平均順位</th>
+                <th className="py-1 text-right">引用率</th>
+                <th className="py-1 text-right">クエリ数</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((r) => (
+                <tr key={r.cluster_id} className="border-t border-border">
+                  <td className="py-1">{AREA_LABEL[r.cluster_id] ?? r.cluster_id}</td>
+                  <td className="py-1 text-right tabular-nums">{r.impressions}</td>
+                  <td className="py-1 text-right tabular-nums">{r.clicks}</td>
+                  <td className="py-1 text-right tabular-nums">
+                    {r.avg_position?.toFixed(1) ?? '—'}
+                  </td>
+                  <td className="py-1 text-right tabular-nums">
+                    {(r.citation_rate * 100).toFixed(0)}%
+                  </td>
+                  <td className="py-1 text-right tabular-nums">{r.queries}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function _scoreColor(score: number | null): string {
+  if (score === null) return 'text-muted-foreground';
+  if (score >= 90) return 'text-emerald-600 dark:text-emerald-400';
+  if (score >= 50) return 'text-amber-600 dark:text-amber-400';
+  return 'text-rose-600 dark:text-rose-400';
+}
+
+function PageSpeedBlock() {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'page-speed'],
+    queryFn: fetchPageSpeed,
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Core Web Vitals(直近計測)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            まだ計測がありません。週次ジョブ(月曜 5:30 JST)または環境変数
+            <code className="mx-1">MARKETER_PAGESPEED_API_KEY</code>
+            設定後の手動キックを待ってください。
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted-foreground">
+                <tr>
+                  <th className="py-1">URL / strategy</th>
+                  <th className="py-1 text-right">スコア</th>
+                  <th className="py-1 text-right">LCP</th>
+                  <th className="py-1 text-right">CLS</th>
+                  <th className="py-1 text-right">INP</th>
+                  <th className="py-1 text-right">計測日</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((r, i) => (
+                  <tr key={i} className="border-t border-border">
+                    <td className="py-1 max-w-[20rem] truncate">
+                      {r.page_url}
+                      <span className="ml-2 text-[10px] text-muted-foreground">
+                        ({r.strategy})
+                      </span>
+                    </td>
+                    <td
+                      className={`py-1 text-right tabular-nums ${_scoreColor(r.performance_score)}`}
+                    >
+                      {r.performance_score ?? '—'}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">
+                      {r.lcp_ms ? `${(r.lcp_ms / 1000).toFixed(1)}s` : '—'}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">
+                      {r.cls !== null ? r.cls.toFixed(3) : '—'}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">
+                      {r.inp_ms !== null ? `${r.inp_ms}ms` : '—'}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">{r.measured_at}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function MarketingActionRow({ a }: { a: MarketingAction }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -1721,6 +2149,10 @@ export default function DashboardPage() {
         <ClusterCitationBlock days={days} />
       </div>
 
+      <CvPathsBlock days={days} />
+      <BrandSearchBlock />
+      <SeasonalityBlock />
+
       <NextActionsBlock />
     </div>
   );
@@ -1728,6 +2160,8 @@ export default function DashboardPage() {
   const contentTab = (
     <div className="space-y-6">
       <PagePerformanceBlock days={days} />
+      <PageRankDecayBlock />
+      <PageSpeedBlock />
       <FunnelBlock days={days} />
     </div>
   );
@@ -1735,6 +2169,8 @@ export default function DashboardPage() {
   const keywordTab = (
     <div className="space-y-6">
       <HeatmapBlock days={days} />
+      <SearchIntentBlock days={days} />
+      <AreaPerformanceBlock days={days} />
       <KeywordOpportunityBlock days={days} />
       <TopQueriesBlock days={days} />
     </div>
