@@ -192,35 +192,46 @@ async def home_today(
         )
     ) or 0
 
-    # ---- システム健全性(直近24時間に failed があれば warning) ----
+    # ---- システム健全性 ----
+    # ロジック: 各ジョブの「最新の」実行ステータスを見る。直近24時間に何度か失敗していても
+    # その後 success していれば「自己回復済み」として警告しない(ノイズ抑制)。
     issues: list[HealthIssue] = []
     cutoff = now - timedelta(hours=24)
-    failed_jobs = list(
+    job_names = list(
         (
+            await session.scalars(
+                select(JobExecutionLog.job_name)
+                .where(
+                    JobExecutionLog.tenant_id == tenant_id,
+                    JobExecutionLog.started_at >= cutoff,
+                )
+                .distinct()
+            )
+        ).all()
+    )
+    for name in job_names:
+        latest = (
             await session.scalars(
                 select(JobExecutionLog)
                 .where(
                     JobExecutionLog.tenant_id == tenant_id,
-                    JobExecutionLog.status == JobStatusEnum.failed,
+                    JobExecutionLog.job_name == name,
                     JobExecutionLog.started_at >= cutoff,
                 )
                 .order_by(desc(JobExecutionLog.started_at))
+                .limit(1)
             )
-        ).all()
-    )
-    seen_jobs: set[str] = set()
-    for j in failed_jobs:
-        if j.job_name in seen_jobs:
+        ).one_or_none()
+        if latest is None or latest.status != JobStatusEnum.failed:
             continue
-        seen_jobs.add(j.job_name)
         target = "/settings/status"
-        if j.job_name in ("collect_gsc", "collect_ga4", "collect_pagespeed"):
+        if name in ("collect_gsc", "collect_ga4", "collect_pagespeed"):
             target = "/settings/credentials"
         issues.append(
             HealthIssue(
-                job_name=j.job_name,
+                job_name=name,
                 severity="error",
-                message=f"{j.job_name} が失敗しています",
+                message=f"{name} が失敗しています",
                 target_url=target,
             )
         )
