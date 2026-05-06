@@ -5,7 +5,8 @@ import { useLogout, useMe } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
 
 const NAV = [
-  { to: '/', label: 'ダッシュボード', exact: true },
+  { to: '/', label: 'ホーム', exact: true },
+  { to: '/analytics', label: 'ダッシュボード' },
   { to: '/strategic', label: '戦略レビュー' },
   { to: '/queries', label: 'クエリ' },
   { to: '/keyword-universe', label: 'キーワード分析' },

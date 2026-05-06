@@ -15,6 +15,7 @@ from app.db.models.competitor_post import CompetitorPost
 from app.db.models.content import Content
 from app.db.models.content_brief import ContentBrief
 from app.db.models.content_metric import ContentMetric
+from app.db.models.daily_action import DailyAction
 from app.db.models.enums import (
     AiOriginEnum,
     AIProviderEnum,
@@ -66,6 +67,7 @@ __all__ = [
     "Content",
     "ContentBrief",
     "ContentMetric",
+    "DailyAction",
     "Ga4AiReferralDaily",
     "Ga4DailyMetric",
     "Ga4HourlyMetric",

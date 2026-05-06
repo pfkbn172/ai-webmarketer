@@ -8,6 +8,7 @@ import CitationMonitorPage from '@/pages/CitationMonitorPage';
 import ContentBriefDetailPage from '@/pages/ContentBriefDetailPage';
 import ContentBriefsPage from '@/pages/ContentBriefsPage';
 import DashboardPage from '@/pages/DashboardPage';
+import HomePage from '@/pages/HomePage';
 import InquiriesPage from '@/pages/InquiriesPage';
 import KeywordUniversePage from '@/pages/KeywordUniversePage';
 import LoginPage from '@/pages/LoginPage';
@@ -35,7 +36,8 @@ export default function App() {
               </RequireAuth>
             }
           >
-            <Route index element={<DashboardPage />} />
+            <Route index element={<HomePage />} />
+            <Route path="analytics" element={<DashboardPage />} />
             <Route path="strategic" element={<StrategicReviewPage />} />
             <Route path="queries" element={<TargetQueriesPage />} />
             <Route path="keyword-universe" element={<KeywordUniversePage />} />
