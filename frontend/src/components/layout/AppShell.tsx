@@ -1,27 +1,37 @@
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/Button';
 import { useLogout, useMe } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
 
+/**
+ * 5タブ集約ナビ。
+ * - exact: true は完全一致のみ active(ホーム用)
+ * - それ以外は `to` プレフィックスで始まるパスを全部 active 扱い(子ページでも親タブが光る)
+ * - 旧URL(/strategic /queries /keyword-universe ...)へのアクセスは App.tsx の Navigate で
+ *   新URL にリダイレクトされる前提なので、ここでは新URLだけ並べる。
+ */
 const NAV = [
-  { to: '/', label: 'ホーム', exact: true },
-  { to: '/analytics', label: 'ダッシュボード' },
-  { to: '/strategic', label: '戦略レビュー' },
-  { to: '/queries', label: 'クエリ' },
-  { to: '/keyword-universe', label: 'キーワード分析' },
-  { to: '/content-briefs', label: 'ブリーフ' },
-  { to: '/citations', label: '引用モニタ' },
-  { to: '/citations/manual', label: '手入力' },
-  { to: '/inquiries', label: '問い合わせ' },
-  { to: '/settings', label: '設定' },
-  { to: '/manual', label: 'マニュアル' },
+  { to: '/', label: '🏠 ホーム', exact: true },
+  { to: '/analytics', label: '📊 分析' },
+  { to: '/strategy', label: '🎯 戦略' },
+  { to: '/production', label: '✏️ 制作' },
+  { to: '/settings', label: '⚙️ 設定' },
 ];
 
 export default function AppShell() {
   const { data: me } = useMe();
   const logout = useLogout();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const isActive = (item: (typeof NAV)[number]) => {
+    if (item.exact) return location.pathname === item.to;
+    return (
+      location.pathname === item.to ||
+      location.pathname.startsWith(item.to + '/')
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -31,21 +41,18 @@ export default function AppShell() {
         </Link>
         <nav className="hidden items-center gap-1 md:flex">
           {NAV.map((n) => (
-            <NavLink
+            <Link
               key={n.to}
               to={n.to}
-              end={n.exact}
-              className={({ isActive }) =>
-                cn(
-                  'rounded-md px-3 py-1.5 text-sm transition-colors',
-                  isActive
-                    ? 'bg-secondary text-secondary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )
-              }
+              className={cn(
+                'rounded-md px-3 py-1.5 text-sm transition-colors',
+                isActive(n)
+                  ? 'bg-secondary text-secondary-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
             >
               {n.label}
-            </NavLink>
+            </Link>
           ))}
         </nav>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">

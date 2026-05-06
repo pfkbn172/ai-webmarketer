@@ -527,7 +527,7 @@ function AnomalyBanner() {
                 <b>{a.kind}</b>: {a.detail}
               </p>
             ))}
-            <Link to="/strategic" className="text-xs text-primary hover:underline">
+            <Link to="/strategy/summary" className="text-xs text-primary hover:underline">
               戦略レビュー画面で確認 →
             </Link>
           </div>
@@ -1232,7 +1232,7 @@ function CompetitorTopBlock({ days }: { days: number }) {
           </ul>
         )}
         <div className="mt-3 text-right">
-          <Link to="/strategic" className="text-xs text-primary hover:underline">
+          <Link to="/strategy/summary" className="text-xs text-primary hover:underline">
             戦略レビューで確認 →
           </Link>
         </div>

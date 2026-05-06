@@ -29,7 +29,7 @@ export default function ContentBriefDetailPage() {
     mutationFn: () => deleteBrief(briefId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['content_briefs'] });
-      navigate('/content-briefs');
+      navigate('/production/briefs');
     },
   });
 
@@ -90,7 +90,7 @@ export default function ContentBriefDetailPage() {
               {(publish.error as Error)?.message ?? 'WP送信に失敗しました'}
             </span>
           )}
-          <Link to="/content-briefs" className="ml-auto text-sm text-blue-700 hover:underline">
+          <Link to="/production/briefs" className="ml-auto text-sm text-blue-700 hover:underline">
             ← 一覧に戻る
           </Link>
           <Button
