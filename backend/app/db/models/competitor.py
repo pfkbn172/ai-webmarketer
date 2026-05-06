@@ -1,4 +1,5 @@
 from sqlalchemy import Boolean, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -15,3 +16,7 @@ class Competitor(Base, IdMixin, TenantMixin):
     brand_name: Mapped[str | None] = mapped_column(Text)
     rss_url: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    # 競合の主要 LP URL(複数)。空ならトップページ(https://{domain}/)のみスクレイプする。
+    target_urls: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default="{}"
+    )

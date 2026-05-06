@@ -111,32 +111,34 @@ async def aggregate_universe(
         )
 
     # 3) upsert(unique key: tenant_id+keyword)
-    stmt = pg_insert(KeywordUniverse).values(upsert_payload)
-    update_columns = {
-        c: stmt.excluded[c]
-        for c in (
-            "cluster_ids",
-            "intent",
-            "is_geographic",
-            "gsc_imp_12m",
-            "gsc_clicks_12m",
-            "gsc_avg_position",
-            "suggest_derivative_count",
-            "competitor_coverage_count",
-            "llm_self_cite_rate",
-            "llm_competitor_cite_rate",
-            "priority_score",
-            "opportunity_flag",
-            "source_breakdown",
-            "last_aggregated_at",
-            "updated_at",
-        )
-    }
-    stmt = stmt.on_conflict_do_update(
-        constraint="uq_ku_tenant_keyword",
-        set_=update_columns,
+    #    Postgres プロトコルは1ステートメント 32767 パラメータが上限。
+    #    1行=17列なのでバッチ 1500 行(=25500 パラメータ)で安全に分割する。
+    update_column_names = (
+        "cluster_ids",
+        "intent",
+        "is_geographic",
+        "gsc_imp_12m",
+        "gsc_clicks_12m",
+        "gsc_avg_position",
+        "suggest_derivative_count",
+        "competitor_coverage_count",
+        "llm_self_cite_rate",
+        "llm_competitor_cite_rate",
+        "priority_score",
+        "opportunity_flag",
+        "source_breakdown",
+        "last_aggregated_at",
+        "updated_at",
     )
-    await session.execute(stmt)
+    BATCH_SIZE = 1500
+    for i in range(0, len(upsert_payload), BATCH_SIZE):
+        chunk = upsert_payload[i : i + BATCH_SIZE]
+        stmt = pg_insert(KeywordUniverse).values(chunk)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_ku_tenant_keyword",
+            set_={c: stmt.excluded[c] for c in update_column_names},
+        )
+        await session.execute(stmt)
     await session.commit()
 
     elapsed = (datetime.now(UTC) - started).total_seconds()

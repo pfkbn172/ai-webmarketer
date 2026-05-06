@@ -8,6 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.scheduler.jobs.aggregate_keyword_universe import job as job_keyword_universe
+from app.scheduler.jobs.collect_competitor_headings import job as job_competitor_headings
 from app.scheduler.jobs.collect_competitor_rss import job as job_competitor_rss
 from app.scheduler.jobs.collect_ga4 import job as job_ga4
 from app.scheduler.jobs.collect_gsc import job as job_gsc
@@ -38,6 +39,11 @@ SCHEDULE = {
     # Google/Bing への負荷とトレンド更新頻度を考慮して週次。
     "collect_keyword_suggestions": CronTrigger(
         day_of_week="mon", hour=4, minute=30, timezone="Asia/Tokyo"
+    ),
+    # 競合見出し収集は月次(毎月1日 4:45 JST、トップ+target_urlsをスクレイプ)。
+    # 月1で十分(競合のh2は頻繁には変わらない)。サジェスト収集の15分後。
+    "collect_competitor_headings": CronTrigger(
+        day=1, hour=4, minute=45, timezone="Asia/Tokyo"
     ),
     # ユニバース集計は週次(月曜 5:15、サジェスト+競合RSS の後)。
     # GSC・サジェスト・競合・LLM引用率を統合して priority_score を更新。
@@ -73,6 +79,11 @@ def build_scheduler() -> AsyncIOScheduler:
         job_keyword_suggestions,
         SCHEDULE["collect_keyword_suggestions"],
         id="collect_keyword_suggestions",
+    )
+    scheduler.add_job(
+        job_competitor_headings,
+        SCHEDULE["collect_competitor_headings"],
+        id="collect_competitor_headings",
     )
     scheduler.add_job(
         job_keyword_universe,
