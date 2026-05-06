@@ -12,6 +12,7 @@ from app.api.v1 import (
     exports,
     health,
     inquiries,
+    keyword_universe,
     kpi,
     marketing_actions,
     reports,
@@ -55,6 +56,7 @@ app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
 app.include_router(reports.public_router, prefix="/api/v1")
 app.include_router(marketing_actions.router, prefix="/api/v1")
+app.include_router(keyword_universe.router, prefix="/api/v1")
 
 # Webhook(認証不要、テナント ID は URL に含める)
 app.include_router(wh_wordpress.router, prefix="/webhook")

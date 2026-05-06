@@ -7,6 +7,7 @@ import CitationManualPage from '@/pages/CitationManualPage';
 import CitationMonitorPage from '@/pages/CitationMonitorPage';
 import DashboardPage from '@/pages/DashboardPage';
 import InquiriesPage from '@/pages/InquiriesPage';
+import KeywordUniversePage from '@/pages/KeywordUniversePage';
 import LoginPage from '@/pages/LoginPage';
 import ManualPage from '@/pages/ManualPage';
 import PublicReportPage from '@/pages/PublicReportPage';
@@ -35,6 +36,7 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="strategic" element={<StrategicReviewPage />} />
             <Route path="queries" element={<TargetQueriesPage />} />
+            <Route path="keyword-universe" element={<KeywordUniversePage />} />
             <Route path="citations" element={<CitationMonitorPage />} />
             <Route path="citations/manual" element={<CitationManualPage />} />
             <Route path="inquiries" element={<InquiriesPage />} />

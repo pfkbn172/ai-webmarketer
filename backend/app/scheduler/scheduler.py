@@ -7,6 +7,7 @@ Phase 1: AsyncIOScheduler を 1 プロセス常駐(marketer-worker)で起動。
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from app.scheduler.jobs.aggregate_keyword_universe import job as job_keyword_universe
 from app.scheduler.jobs.collect_competitor_rss import job as job_competitor_rss
 from app.scheduler.jobs.collect_ga4 import job as job_ga4
 from app.scheduler.jobs.collect_gsc import job as job_gsc
@@ -38,6 +39,11 @@ SCHEDULE = {
     "collect_keyword_suggestions": CronTrigger(
         day_of_week="mon", hour=4, minute=30, timezone="Asia/Tokyo"
     ),
+    # ユニバース集計は週次(月曜 5:15、サジェスト+競合RSS の後)。
+    # GSC・サジェスト・競合・LLM引用率を統合して priority_score を更新。
+    "aggregate_keyword_universe": CronTrigger(
+        day_of_week="mon", hour=5, minute=15, timezone="Asia/Tokyo"
+    ),
     # 週次サマリは月曜のまま
     "generate_weekly_summary": CronTrigger(
         day_of_week="mon", hour=6, minute=0, timezone="Asia/Tokyo"
@@ -67,6 +73,11 @@ def build_scheduler() -> AsyncIOScheduler:
         job_keyword_suggestions,
         SCHEDULE["collect_keyword_suggestions"],
         id="collect_keyword_suggestions",
+    )
+    scheduler.add_job(
+        job_keyword_universe,
+        SCHEDULE["aggregate_keyword_universe"],
+        id="aggregate_keyword_universe",
     )
     log.info("scheduler_built", jobs=list(SCHEDULE.keys()))
     return scheduler

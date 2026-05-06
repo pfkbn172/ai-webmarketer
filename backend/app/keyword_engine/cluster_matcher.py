@@ -48,18 +48,34 @@ def get_clusters() -> tuple[Cluster, ...]:
 
 
 def classify(keyword: str) -> Cluster:
-    """keyword を上から順に各クラスタの aliases と部分一致でマッチさせ、
-    最初にマッチしたクラスタを返す。どれにも該当しなければ UNCLASSIFIED。
+    """先頭マッチを返す互換 API。新規コードは classify_all() を使うこと。"""
+    matches = classify_all(keyword)
+    return matches[0] if matches else _unclassified()
+
+
+# 1キーワードに付与する最大クラスタ数(計画書 §3 マルチクラスタ対応)。
+MAX_CLUSTERS_PER_KEYWORD = 3
+
+
+def classify_all(keyword: str) -> list[Cluster]:
+    """keyword に該当する全クラスタを最大 MAX_CLUSTERS_PER_KEYWORD 個まで返す。
+
+    一致順は clusters.yaml の登場順(地域系優先 → 業者探索 → DX/AI/RPA 等 → 補助金 → ツール)。
+    どこにも該当しなければ UNCLASSIFIED 1つだけ返す。
     """
     norm = normalize(keyword)
     if not norm:
-        return _unclassified()
+        return [_unclassified()]
 
+    matched: list[Cluster] = []
     for cluster in get_clusters():
         for alias in cluster.aliases:
             if alias and alias in norm:
-                return cluster
-    return _unclassified()
+                matched.append(cluster)
+                break
+        if len(matched) >= MAX_CLUSTERS_PER_KEYWORD:
+            break
+    return matched if matched else [_unclassified()]
 
 
 @lru_cache(maxsize=1)

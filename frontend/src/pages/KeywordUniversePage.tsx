@@ -1,0 +1,278 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+
+import {
+  listClusterCounts,
+  listKeywordUniverse,
+  refreshKeywordUniverse,
+  type ClusterCount,
+  type KeywordUniverseRow,
+  type OpportunityFlag,
+} from '@/api/keyword_universe';
+import { Button } from '@/components/ui/Button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+
+const CLUSTER_LABEL: Record<string, string> = {
+  local_hiranoku: '平野区ローカル',
+  local_osaka: '大阪・関西ローカル',
+  vendor_search: '業者探索',
+  dx: 'DX系',
+  ai: 'AI系',
+  automation: '自動化/RPA系',
+  efficiency: '業務効率化・生産性系',
+  digitization: 'デジタル化・IT化系',
+  subsidy: '補助金・助成金系',
+  tool_specific: 'ツール固有名',
+  unclassified: '未分類',
+};
+
+const OPPORTUNITY_LABEL: Record<string, { label: string; tone: string }> = {
+  high_demand_no_coverage: {
+    label: '機会大: 派生豊富だが自社未対応',
+    tone: 'bg-amber-100 text-amber-900',
+  },
+  near_top_3: { label: 'TOP3 近い: リライト機会', tone: 'bg-emerald-100 text-emerald-900' },
+  low_demand: { label: '需要薄', tone: 'bg-slate-100 text-slate-600' },
+};
+
+const FLAG_FILTER_OPTIONS: Array<{ value: OpportunityFlag | ''; label: string }> = [
+  { value: '', label: 'すべて' },
+  { value: 'high_demand_no_coverage', label: '機会大のみ' },
+  { value: 'near_top_3', label: 'TOP3近いのみ' },
+];
+
+const fmtPos = (v: number | null) => (v == null ? '—' : v.toFixed(1));
+const fmtRate = (v: number | null) =>
+  v == null ? '—' : `${(v * 100).toFixed(0)}%`;
+
+export default function KeywordUniversePage() {
+  const qc = useQueryClient();
+  const [activeCluster, setActiveCluster] = useState<string | null>(null);
+  const [flagFilter, setFlagFilter] = useState<OpportunityFlag | ''>('');
+  const [minPriority, setMinPriority] = useState(0);
+
+  const counts = useQuery<ClusterCount[], Error>({
+    queryKey: ['keyword_universe_clusters'],
+    queryFn: listClusterCounts,
+  });
+
+  const list = useQuery<KeywordUniverseRow[], Error>({
+    queryKey: ['keyword_universe', activeCluster, flagFilter, minPriority],
+    queryFn: () =>
+      listKeywordUniverse({
+        cluster_id: activeCluster ?? undefined,
+        opportunity_flag: flagFilter || undefined,
+        min_priority: minPriority,
+        limit: 200,
+      }),
+  });
+
+  const refresh = useMutation({
+    mutationFn: refreshKeywordUniverse,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['keyword_universe'] });
+      qc.invalidateQueries({ queryKey: ['keyword_universe_clusters'] });
+    },
+  });
+
+  const totalRows = useMemo(
+    () => (counts.data ?? []).reduce((s, c) => s + c.rows, 0),
+    [counts.data],
+  );
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>キーワードユニバース</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">
+            GSC実績 / Google・Bingサジェスト派生 / 競合カバー / LLM引用率を統合した
+            データ駆動キーワード辞書。<b>「機会大」フラグ</b>のついた語が新規LP・記事の最有力候補です。
+          </p>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-3">
+          <Button
+            onClick={() => refresh.mutate()}
+            disabled={refresh.isPending}
+          >
+            {refresh.isPending ? '集計中…' : '🔄 いま集計し直す'}
+          </Button>
+          {refresh.data && (
+            <span className="text-sm text-muted-foreground">
+              {refresh.data.upserted} 件更新
+            </span>
+          )}
+          <span className="ml-auto text-xs text-muted-foreground">
+            総件数: {totalRows.toLocaleString()}
+          </span>
+        </CardContent>
+      </Card>
+
+      {/* クラスタタブ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">クラスタ別フィルタ</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <ClusterPill
+            label="すべて"
+            count={totalRows}
+            active={activeCluster === null}
+            onClick={() => setActiveCluster(null)}
+          />
+          {(counts.data ?? []).map((c) => (
+            <ClusterPill
+              key={c.cluster_id}
+              label={CLUSTER_LABEL[c.cluster_id] ?? c.cluster_id}
+              count={c.rows}
+              active={activeCluster === c.cluster_id}
+              onClick={() => setActiveCluster(c.cluster_id)}
+            />
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* セカンダリフィルタ */}
+      <Card>
+        <CardContent className="flex flex-wrap items-center gap-4 py-4">
+          <label className="text-sm">
+            機会フラグ:&nbsp;
+            <select
+              className="rounded border px-2 py-1 text-sm"
+              value={flagFilter ?? ''}
+              onChange={(e) => setFlagFilter((e.target.value || '') as OpportunityFlag | '')}
+            >
+              {FLAG_FILTER_OPTIONS.map((o) => (
+                <option key={String(o.value ?? 'all')} value={o.value ?? ''}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm">
+            最低 priority_score:&nbsp;
+            <input
+              type="number"
+              min={0}
+              step={5}
+              value={minPriority}
+              onChange={(e) => setMinPriority(Number(e.target.value) || 0)}
+              className="w-20 rounded border px-2 py-1 text-sm"
+            />
+          </label>
+        </CardContent>
+      </Card>
+
+      {/* テーブル */}
+      <Card>
+        <CardContent className="overflow-auto p-0">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-2">キーワード</th>
+                <th className="px-4 py-2">クラスタ</th>
+                <th className="px-4 py-2 text-right">スコア</th>
+                <th className="px-4 py-2 text-right">imp(12m)</th>
+                <th className="px-4 py-2 text-right">avg pos</th>
+                <th className="px-4 py-2 text-right">派生</th>
+                <th className="px-4 py-2 text-right">競合</th>
+                <th className="px-4 py-2 text-right">LLM自社</th>
+                <th className="px-4 py-2">機会</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.isPending && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                    読込中…
+                  </td>
+                </tr>
+              )}
+              {list.data?.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                    該当キーワードがありません
+                  </td>
+                </tr>
+              )}
+              {list.data?.map((r) => {
+                const flagInfo = r.opportunity_flag
+                  ? OPPORTUNITY_LABEL[r.opportunity_flag]
+                  : null;
+                return (
+                  <tr key={r.id} className="border-t hover:bg-slate-50">
+                    <td className="px-4 py-2 font-medium">{r.keyword}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {r.cluster_ids.map((cid) => (
+                          <span
+                            key={cid}
+                            className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700"
+                          >
+                            {CLUSTER_LABEL[cid] ?? cid}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {Number(r.priority_score).toFixed(1)}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {r.gsc_imp_12m.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums">{fmtPos(r.gsc_avg_position)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {r.suggest_derivative_count}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {r.competitor_coverage_count}
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {fmtRate(r.llm_self_cite_rate)}
+                    </td>
+                    <td className="px-4 py-2">
+                      {flagInfo ? (
+                        <span className={`inline-block rounded px-2 py-0.5 text-xs ${flagInfo.tone}`}>
+                          {flagInfo.label}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ClusterPill({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-xs transition ${
+        active
+          ? 'border-slate-900 bg-slate-900 text-white'
+          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+      }`}
+    >
+      {label}
+      <span className="ml-1 text-[11px] opacity-80">{count.toLocaleString()}</span>
+    </button>
+  );
+}

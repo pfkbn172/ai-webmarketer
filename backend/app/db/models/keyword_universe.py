@@ -18,7 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -29,12 +29,14 @@ class KeywordUniverse(Base, IdMixin, TenantMixin, UpdatedTimestampsMixin):
     __tablename__ = "keyword_universe"
     __table_args__ = (
         UniqueConstraint("tenant_id", "keyword", name="uq_ku_tenant_keyword"),
-        Index("ix_ku_tenant_cluster", "tenant_id", "cluster_id"),
         Index("ix_ku_tenant_priority", "tenant_id", "priority_score"),
     )
 
     keyword: Mapped[str] = mapped_column(Text, nullable=False)
-    cluster_id: Mapped[str] = mapped_column(Text, nullable=False)
+    # 1キーワードに最大3つのクラスタを割当てる(例: ["dx","local_osaka","vendor_search"])
+    cluster_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default="{}"
+    )
     intent: Mapped[str | None] = mapped_column(Text)
     is_geographic: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"

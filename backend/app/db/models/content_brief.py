@@ -22,7 +22,10 @@ class ContentBrief(Base, IdMixin, TenantMixin, UpdatedTimestampsMixin):
     )
 
     primary_keyword: Mapped[str] = mapped_column(Text, nullable=False)
-    cluster_id: Mapped[str] = mapped_column(Text, nullable=False)
+    # 採用キーワードが属するクラスタ群(LP/記事1本が複数クラスタを横断するケースも想定)
+    cluster_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default="{}"
+    )
     selected_keywords: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default="{}"
     )
