@@ -7,15 +7,19 @@ business_context を踏まえて Gemini に「現実的に勝てるクエリ 15�
 import json
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai_engine.providers.factory import AIProviderFactory
 from app.ai_engine.template_loader import render
 from app.db.models.enums import AIUseCaseEnum
+from app.db.models.keyword_universe import KeywordUniverse
 from app.db.models.target_query import TargetQuery
 from app.db.models.tenant import Tenant
 from app.utils.logger import get_logger
+
+# プロンプトに同梱する universe の上限件数(計画書 §4 Phase 4)
+UNIVERSE_TOP_LIMIT = 30
 
 log = get_logger(__name__)
 
@@ -39,6 +43,10 @@ async def suggest_queries(
         ).all()
     )
 
+    # ---- v2: keyword_universe からデータ駆動の根拠を取得 ----
+    universe_top = await _load_universe_top(session, tenant_id)
+    clusters_summary = await _load_clusters_summary(session, tenant_id)
+
     prompt = render(
         "query_suggestion.md",
         {
@@ -56,6 +64,8 @@ async def suggest_queries(
             "weak_segments": ", ".join(bc.get("weak_segments", [])) or "(なし)",
             "strong_segments": ", ".join(bc.get("strong_segments", [])) or "(なし)",
             "existing_queries": [q.query_text for q in existing],
+            "universe_top": universe_top,
+            "clusters_summary": clusters_summary,
         },
     )
 
@@ -75,6 +85,81 @@ async def suggest_queries(
         tokens=res.usage.total_tokens,
     )
     return _parse_json_array(res.text)
+
+
+async def _load_universe_top(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> list[dict]:
+    """priority_score 上位 UNIVERSE_TOP_LIMIT 件を返す。
+    near_top_3 / high_demand_no_coverage を確実に含めるため、フラグ付きと素のスコア上位を
+    別々に取って結合する(同じ keyword は重複排除)。
+    """
+    # フラグ付き(機会大が薄れないようにする)
+    flagged = list(
+        (
+            await session.scalars(
+                select(KeywordUniverse)
+                .where(
+                    KeywordUniverse.tenant_id == tenant_id,
+                    KeywordUniverse.opportunity_flag.in_(
+                        ["high_demand_no_coverage", "near_top_3"]
+                    ),
+                )
+                .order_by(desc(KeywordUniverse.priority_score))
+                .limit(UNIVERSE_TOP_LIMIT)
+            )
+        ).all()
+    )
+    # 素のスコア上位
+    plain = list(
+        (
+            await session.scalars(
+                select(KeywordUniverse)
+                .where(KeywordUniverse.tenant_id == tenant_id)
+                .order_by(desc(KeywordUniverse.priority_score))
+                .limit(UNIVERSE_TOP_LIMIT)
+            )
+        ).all()
+    )
+
+    seen: set[str] = set()
+    out: list[dict] = []
+    for r in (*flagged, *plain):
+        if r.keyword in seen:
+            continue
+        seen.add(r.keyword)
+        out.append(
+            {
+                "keyword": r.keyword,
+                "cluster_ids": list(r.cluster_ids or []),
+                "priority_score": float(r.priority_score),
+                "gsc_imp_12m": int(r.gsc_imp_12m),
+                "gsc_avg_position": float(r.gsc_avg_position) if r.gsc_avg_position is not None else None,
+                "suggest_derivative_count": int(r.suggest_derivative_count),
+                "competitor_coverage_count": int(r.competitor_coverage_count),
+                "opportunity_flag": r.opportunity_flag,
+            }
+        )
+        if len(out) >= UNIVERSE_TOP_LIMIT:
+            break
+    return out
+
+
+async def _load_clusters_summary(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> list[dict]:
+    """各 cluster_id の件数(プロンプト参考用)。"""
+    stmt = (
+        select(
+            func.unnest(KeywordUniverse.cluster_ids).label("cid"),
+            func.count().label("rows"),
+        )
+        .where(KeywordUniverse.tenant_id == tenant_id)
+        .group_by(text("cid"))
+        .order_by(desc(text("rows")))
+    )
+    res = await session.execute(stmt)
+    return [{"cluster_id": cid, "rows": int(rows)} for cid, rows in res]
 
 
 def _parse_json_array(text: str) -> list[dict]:
