@@ -5,6 +5,8 @@ import AppShell from '@/components/layout/AppShell';
 import RequireAuth from '@/components/layout/RequireAuth';
 import CitationManualPage from '@/pages/CitationManualPage';
 import CitationMonitorPage from '@/pages/CitationMonitorPage';
+import ContentBriefDetailPage from '@/pages/ContentBriefDetailPage';
+import ContentBriefsPage from '@/pages/ContentBriefsPage';
 import DashboardPage from '@/pages/DashboardPage';
 import InquiriesPage from '@/pages/InquiriesPage';
 import KeywordUniversePage from '@/pages/KeywordUniversePage';
@@ -37,6 +39,8 @@ export default function App() {
             <Route path="strategic" element={<StrategicReviewPage />} />
             <Route path="queries" element={<TargetQueriesPage />} />
             <Route path="keyword-universe" element={<KeywordUniversePage />} />
+            <Route path="content-briefs" element={<ContentBriefsPage />} />
+            <Route path="content-briefs/:id" element={<ContentBriefDetailPage />} />
             <Route path="citations" element={<CitationMonitorPage />} />
             <Route path="citations/manual" element={<CitationManualPage />} />
             <Route path="inquiries" element={<InquiriesPage />} />

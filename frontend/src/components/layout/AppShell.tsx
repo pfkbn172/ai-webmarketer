@@ -9,6 +9,7 @@ const NAV = [
   { to: '/strategic', label: '戦略レビュー' },
   { to: '/queries', label: 'クエリ' },
   { to: '/keyword-universe', label: 'キーワード分析' },
+  { to: '/content-briefs', label: 'ブリーフ' },
   { to: '/citations', label: '引用モニタ' },
   { to: '/citations/manual', label: '手入力' },
   { to: '/inquiries', label: '問い合わせ' },

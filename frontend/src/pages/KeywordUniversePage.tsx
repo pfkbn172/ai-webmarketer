@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
+import { generateBrief } from '@/api/content_briefs';
 import {
   listClusterCounts,
   listKeywordUniverse,
@@ -47,9 +49,12 @@ const fmtRate = (v: number | null) =>
 
 export default function KeywordUniversePage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [activeCluster, setActiveCluster] = useState<string | null>(null);
   const [flagFilter, setFlagFilter] = useState<OpportunityFlag | ''>('');
   const [minPriority, setMinPriority] = useState(0);
+  const [selected, setSelected] = useState<Record<string, KeywordUniverseRow>>({});
+  const [primaryKw, setPrimaryKw] = useState<string | null>(null);
 
   const counts = useQuery<ClusterCount[], Error>({
     queryKey: ['keyword_universe_clusters'],
@@ -74,6 +79,39 @@ export default function KeywordUniversePage() {
       qc.invalidateQueries({ queryKey: ['keyword_universe_clusters'] });
     },
   });
+
+  const selectedList = useMemo(() => Object.values(selected), [selected]);
+
+  const generate = useMutation({
+    mutationFn: () => {
+      if (!primaryKw) throw new Error('主軸キーワードを選択してください');
+      const primaryRow = selected[primaryKw];
+      if (!primaryRow) throw new Error('主軸キーワードが選択リストにありません');
+      const relatedIds = selectedList.filter((r) => r.id !== primaryRow.id).map((r) => r.id);
+      return generateBrief({
+        primary_keyword: primaryRow.keyword,
+        related_keyword_ids: relatedIds,
+      });
+    },
+    onSuccess: (brief) => {
+      setSelected({});
+      setPrimaryKw(null);
+      navigate(`/content-briefs/${brief.id}`);
+    },
+  });
+
+  const toggleSelect = (row: KeywordUniverseRow) => {
+    setSelected((prev) => {
+      const next = { ...prev };
+      if (next[row.id]) {
+        delete next[row.id];
+        if (primaryKw === row.id) setPrimaryKw(null);
+      } else {
+        next[row.id] = row;
+      }
+      return next;
+    });
+  };
 
   const totalRows = useMemo(
     () => (counts.data ?? []).reduce((s, c) => s + c.rows, 0),
@@ -163,12 +201,64 @@ export default function KeywordUniversePage() {
         </CardContent>
       </Card>
 
+      {/* 選択バー */}
+      {selectedList.length > 0 && (
+        <Card>
+          <CardContent className="flex flex-wrap items-center gap-3 py-4">
+            <span className="text-sm font-medium">
+              選択中 {selectedList.length} 件:
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {selectedList.map((r) => (
+                <span
+                  key={r.id}
+                  className={`rounded px-2 py-0.5 text-xs ${
+                    primaryKw === r.id ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-800'
+                  }`}
+                >
+                  {r.keyword}
+                  {primaryKw === r.id ? ' (主軸)' : ''}
+                </span>
+              ))}
+            </div>
+            <Button
+              className="ml-auto"
+              disabled={!primaryKw || generate.isPending}
+              onClick={() => generate.mutate()}
+            >
+              {generate.isPending ? '生成中…' : '✨ ブリーフ生成'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setSelected({});
+                setPrimaryKw(null);
+              }}
+            >
+              クリア
+            </Button>
+            {!primaryKw && (
+              <p className="w-full text-xs text-amber-700">
+                テーブル左端の「主軸」ボタンで主軸キーワードを1つ選んでください。
+              </p>
+            )}
+            {generate.isError && (
+              <p className="w-full text-xs text-red-600">
+                {(generate.error as Error)?.message ?? 'ブリーフ生成に失敗しました'}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* テーブル */}
       <Card>
         <CardContent className="overflow-auto p-0">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th className="px-2 py-2 text-center">採用</th>
+                <th className="px-2 py-2 text-center">主軸</th>
                 <th className="px-4 py-2">キーワード</th>
                 <th className="px-4 py-2">クラスタ</th>
                 <th className="px-4 py-2 text-right">スコア</th>
@@ -183,14 +273,14 @@ export default function KeywordUniversePage() {
             <tbody>
               {list.isPending && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
                     読込中…
                   </td>
                 </tr>
               )}
               {list.data?.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
                     該当キーワードがありません
                   </td>
                 </tr>
@@ -199,8 +289,26 @@ export default function KeywordUniversePage() {
                 const flagInfo = r.opportunity_flag
                   ? OPPORTUNITY_LABEL[r.opportunity_flag]
                   : null;
+                const isSelected = !!selected[r.id];
+                const isPrimary = primaryKw === r.id;
                 return (
                   <tr key={r.id} className="border-t hover:bg-slate-50">
+                    <td className="px-2 py-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(r)}
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-center">
+                      <input
+                        type="radio"
+                        name="primary-keyword"
+                        disabled={!isSelected}
+                        checked={isPrimary}
+                        onChange={() => setPrimaryKw(r.id)}
+                      />
+                    </td>
                     <td className="px-4 py-2 font-medium">{r.keyword}</td>
                     <td className="px-4 py-2">
                       <div className="flex flex-wrap gap-1">

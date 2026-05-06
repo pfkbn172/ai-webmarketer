@@ -45,6 +45,42 @@ class WordPressClient:
         )
 
     @retry_async(max_attempts=3, base_delay=2.0, retriable_exceptions=(httpx.HTTPError,))
+    async def create_draft(
+        self,
+        *,
+        title: str,
+        content: str,
+        slug: str | None = None,
+        excerpt: str | None = None,
+        meta_description: str | None = None,
+    ) -> dict:
+        """記事を下書き(status=draft)として作成し、生 JSON を返す(post id を含む)。
+
+        meta_description は Yoast/All in One SEO 等プラグイン依存なので
+        meta フィールド `marketer_meta_description` に保存する(テーマ/プラグイン側で参照)。
+        """
+        payload: dict = {
+            "title": title,
+            "content": content,
+            "status": "draft",
+        }
+        if slug:
+            payload["slug"] = slug
+        if excerpt:
+            payload["excerpt"] = excerpt
+        if meta_description:
+            payload["meta"] = {"marketer_meta_description": meta_description}
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{self._base}/wp-json/wp/v2/posts",
+                auth=self._auth,
+                json=payload,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    @retry_async(max_attempts=3, base_delay=2.0, retriable_exceptions=(httpx.HTTPError,))
     async def upload_root_file(self, path: str, content: str) -> None:
         """サイトルート直下のファイル(llms.txt 等)を更新。
 
