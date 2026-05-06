@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import { deleteBrief, listBriefs, type ContentBrief } from '@/api/content_briefs';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { TableSkeleton } from '@/components/ui/Skeleton';
 
 const STATUS_LABEL: Record<string, { label: string; tone: string }> = {
   draft: { label: '下書き', tone: 'bg-slate-100 text-slate-700' },
@@ -13,6 +15,7 @@ const STATUS_LABEL: Record<string, { label: string; tone: string }> = {
 
 export default function ContentBriefsPage() {
   const qc = useQueryClient();
+  const dialog = useConfirm();
   const list = useQuery<ContentBrief[], Error>({
     queryKey: ['content_briefs'],
     queryFn: () => listBriefs(),
@@ -22,15 +25,40 @@ export default function ContentBriefsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['content_briefs'] }),
   });
 
+  const askDelete = async (b: ContentBrief) => {
+    const ok = await dialog.confirm({
+      title: 'ブリーフを削除しますか?',
+      message: `「${b.title}」を完全に削除します。この操作は取り消せません。`,
+      confirmLabel: '削除',
+      destructive: true,
+    });
+    if (ok) remove.mutate(b.id);
+  };
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>コンテンツブリーフ</CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">
-            キーワード分析画面で採用したキーワード群から AI が生成した
-            LP/記事の構成案。<b>「ブリーフ詳細」</b>から WordPress 下書きを作成できます。
-          </p>
+          <div className="mt-1 space-y-2 text-sm text-muted-foreground">
+            <p>
+              採用キーワードから AI が生成した LP/記事の構成案(title /
+              meta_description / h2 5本 / 関連語 / 推奨URL)。
+            </p>
+            <p className="text-xs">
+              使い方:
+              <b className="ml-1">①</b>
+              <a className="text-primary underline mx-1" href="/marketer/strategy/universe">
+                キーワード分析
+              </a>
+              で行を選び <b>✨ ブリーフ生成</b> →
+              <b className="ml-1">②</b>
+              タイトルクリックで詳細を確認 →
+              <b className="ml-1">③</b>
+              「📝 WordPress下書きにする」で WP の下書きとして配置。
+              本文は WP 側で書き起こします(プレースホルダ + h2 構成 + meta コメントが入った状態)。
+            </p>
+          </div>
         </CardHeader>
       </Card>
 
@@ -51,8 +79,8 @@ export default function ContentBriefsPage() {
             <tbody>
               {list.isPending && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
-                    読込中…
+                  <td colSpan={7} className="p-0">
+                    <TableSkeleton rows={5} cols={6} />
                   </td>
                 </tr>
               )}
@@ -88,12 +116,7 @@ export default function ContentBriefsPage() {
                       {new Date(b.created_at).toLocaleString('ja-JP')}
                     </td>
                     <td className="px-4 py-2 text-right">
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          if (confirm('削除しますか?')) remove.mutate(b.id);
-                        }}
-                      >
+                      <Button variant="secondary" onClick={() => askDelete(b)}>
                         削除
                       </Button>
                     </td>
@@ -104,6 +127,7 @@ export default function ContentBriefsPage() {
           </table>
         </CardContent>
       </Card>
+      {dialog.element}
     </div>
   );
 }

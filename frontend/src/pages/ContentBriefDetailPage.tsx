@@ -4,11 +4,13 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { deleteBrief, getBrief, publishBriefToWp, type ContentBrief } from '@/api/content_briefs';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 
 export default function ContentBriefDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const dialog = useConfirm();
   const briefId = id ?? '';
 
   const detail = useQuery<ContentBrief, Error>({
@@ -95,8 +97,14 @@ export default function ContentBriefDetailPage() {
           </Link>
           <Button
             variant="secondary"
-            onClick={() => {
-              if (confirm('このブリーフを削除しますか?')) remove.mutate();
+            onClick={async () => {
+              const ok = await dialog.confirm({
+                title: 'ブリーフを削除しますか?',
+                message: `「${b.title}」を完全に削除します。この操作は取り消せません。`,
+                confirmLabel: '削除',
+                destructive: true,
+              });
+              if (ok) remove.mutate();
             }}
           >
             削除
@@ -174,6 +182,7 @@ export default function ContentBriefDetailPage() {
           </CardContent>
         </Card>
       )}
+      {dialog.element}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from '@/api/home';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { CardSkeleton, Skeleton } from '@/components/ui/Skeleton';
 
 const SEVERITY_TONE: Record<Severity, string> = {
   red: 'border-rose-400 bg-rose-50 text-rose-900',
@@ -46,7 +47,23 @@ export default function HomePage() {
   });
 
   if (today.isPending) {
-    return <div className="p-8 text-center text-muted-foreground">読込中…</div>;
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardSkeleton lines={4} />
+        </Card>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="space-y-2 py-4">
+                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="h-7 w-1/2" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
   }
   if (today.isError || !today.data) {
     return <div className="p-8 text-center text-red-600">読み込みに失敗しました</div>;
@@ -65,6 +82,9 @@ export default function HomePage() {
                 ? `最終生成: ${fmtDateTime(data.actions_generated_at)}`
                 : 'まだ生成されていません'}
               {data.actions_stale && data.actions.length > 0 ? ' (要再生成)' : ''}
+              <span className="ml-2">
+                毎朝 6:45 JST に自動生成。「実行する →」で該当画面へ直接ジャンプ。
+              </span>
             </p>
           </div>
           <Button onClick={() => regen.mutate()} disabled={regen.isPending}>

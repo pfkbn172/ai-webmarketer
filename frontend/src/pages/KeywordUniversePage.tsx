@@ -13,6 +13,9 @@ import {
 } from '@/api/keyword_universe';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { TableSkeleton } from '@/components/ui/Skeleton';
+import { Tooltip } from '@/components/ui/Tooltip';
+import { computeBreakdown } from '@/lib/priorityScore';
 
 const CLUSTER_LABEL: Record<string, string> = {
   local_hiranoku: '平野区ローカル',
@@ -123,10 +126,20 @@ export default function KeywordUniversePage() {
       <Card>
         <CardHeader>
           <CardTitle>キーワードユニバース</CardTitle>
-          <p className="mt-1 text-sm text-muted-foreground">
-            GSC実績 / Google・Bingサジェスト派生 / 競合カバー / LLM引用率を統合した
-            データ駆動キーワード辞書。<b>「機会大」フラグ</b>のついた語が新規LP・記事の最有力候補です。
-          </p>
+          <div className="mt-1 space-y-2 text-sm text-muted-foreground">
+            <p>
+              GSC実績 / Google・Bingサジェスト派生 / 競合カバー / LLM引用率を統合した
+              データ駆動キーワード辞書。スコア欄をホバーすると計算内訳が見られます。
+            </p>
+            <p className="text-xs">
+              <b className="text-amber-700">機会大: 派生豊富だが自社未対応</b>
+              =競合も対応していない先行余地。
+              <b className="ml-2 text-emerald-700">TOP3 近い: リライト機会</b>
+              =既に上位寄りで記事改善で月数十〜数百クリック獲得余地。
+              使い方:採用したい行を ☑ でチェック → ◎ で主軸を1つ選ぶ → 上の
+              <b>✨ ブリーフ生成</b>でLP/記事の構成案を作成できます。
+            </p>
+          </div>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3">
           <Button
@@ -273,8 +286,8 @@ export default function KeywordUniversePage() {
             <tbody>
               {list.isPending && (
                 <tr>
-                  <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
-                    読込中…
+                  <td colSpan={11} className="p-0">
+                    <TableSkeleton rows={8} cols={9} />
                   </td>
                 </tr>
               )}
@@ -323,7 +336,7 @@ export default function KeywordUniversePage() {
                       </div>
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">
-                      {Number(r.priority_score).toFixed(1)}
+                      <PriorityScoreCell row={r} />
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">
                       {r.gsc_imp_12m.toLocaleString()}
@@ -354,6 +367,52 @@ export default function KeywordUniversePage() {
           </table>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function PriorityScoreCell({ row }: { row: KeywordUniverseRow }) {
+  const breakdown = computeBreakdown({
+    gsc_imp_12m: row.gsc_imp_12m,
+    gsc_avg_position: row.gsc_avg_position,
+    suggest_derivative_count: row.suggest_derivative_count,
+    competitor_coverage_count: row.competitor_coverage_count,
+    llm_self_cite_rate: row.llm_self_cite_rate,
+    is_geographic: row.is_geographic,
+  });
+  const tooltipBody = (
+    <div className="space-y-1">
+      <div className="font-semibold text-slate-100">priority_score の内訳</div>
+      <BreakdownRow label="GSC実需 log10(imp+1) × 30" value={breakdown.imp_score} />
+      <BreakdownRow label="サジェスト派生 log10(n+1) × 20" value={breakdown.derivative_score} />
+      <BreakdownRow label="競合カバー × 5" value={breakdown.competitor_score} />
+      <BreakdownRow label="順位上位寄り (51-pos) × 0.5" value={breakdown.position_score} />
+      <BreakdownRow
+        label="LLM未引用機会 (1-self_cite) × 10"
+        value={breakdown.llm_opportunity_score}
+      />
+      {breakdown.geo_penalty !== 0 && (
+        <BreakdownRow label="地域系で実需薄 (penalty)" value={breakdown.geo_penalty} />
+      )}
+      <div className="mt-1 border-t border-slate-700 pt-1 font-semibold">
+        合計 {breakdown.total.toFixed(2)}
+      </div>
+    </div>
+  );
+  return (
+    <Tooltip content={tooltipBody}>
+      <span className="cursor-help underline decoration-dotted underline-offset-4">
+        {Number(row.priority_score).toFixed(1)}
+      </span>
+    </Tooltip>
+  );
+}
+
+function BreakdownRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-slate-300">{label}</span>
+      <span className="tabular-nums">{value >= 0 ? '+' : ''}{value.toFixed(2)}</span>
     </div>
   );
 }
