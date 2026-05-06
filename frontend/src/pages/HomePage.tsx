@@ -13,9 +13,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CardSkeleton, Skeleton } from '@/components/ui/Skeleton';
 
 const SEVERITY_TONE: Record<Severity, string> = {
-  red: 'border-rose-400 bg-rose-50 text-rose-900',
-  yellow: 'border-amber-400 bg-amber-50 text-amber-900',
-  green: 'border-emerald-400 bg-emerald-50 text-emerald-900',
+  red: 'border-rose-500 bg-rose-50 text-rose-900 dark:bg-rose-950/50 dark:text-rose-100',
+  yellow:
+    'border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-100',
+  green:
+    'border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-100',
 };
 const SEVERITY_DOT: Record<Severity, string> = {
   red: '🔴',
@@ -145,13 +147,13 @@ export default function HomePage() {
                 key={i}
                 className={`flex items-center justify-between rounded border px-3 py-2 text-sm ${
                   h.severity === 'error'
-                    ? 'border-rose-400 bg-rose-50 text-rose-900'
-                    : 'border-amber-400 bg-amber-50 text-amber-900'
+                    ? 'border-rose-500 bg-rose-50 text-rose-900 dark:bg-rose-950/50 dark:text-rose-100'
+                    : 'border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-100'
                 }`}
               >
                 <span>{h.message}</span>
                 {h.target_url && (
-                  <Link className="text-blue-700 hover:underline" to={h.target_url}>
+                  <Link className="text-primary hover:underline" to={h.target_url}>
                     対応する →
                   </Link>
                 )}
@@ -173,7 +175,7 @@ export default function HomePage() {
                 <li key={i} className="flex justify-between gap-3">
                   <span>
                     {r.target_url ? (
-                      <Link className="text-blue-700 hover:underline" to={r.target_url}>
+                      <Link className="text-primary hover:underline" to={r.target_url}>
                         {r.title}
                       </Link>
                     ) : (
@@ -203,10 +205,10 @@ function ActionRow({ action }: { action: TodayAction }) {
             {SEVERITY_DOT[action.severity]} #{action.action_index}: {action.title}
           </div>
           {action.rationale && (
-            <p className="text-xs text-slate-700">{action.rationale}</p>
+            <p className="text-xs opacity-80">{action.rationale}</p>
           )}
           {action.related_keyword && (
-            <span className="inline-block rounded bg-white/60 px-1.5 py-0.5 text-xs">
+            <span className="inline-block rounded bg-background/60 px-1.5 py-0.5 text-xs">
               {action.related_keyword}
             </span>
           )}
@@ -214,7 +216,7 @@ function ActionRow({ action }: { action: TodayAction }) {
         {action.target_url && (
           <Link
             to={action.target_url}
-            className="shrink-0 rounded border border-current px-3 py-1 text-xs hover:bg-white/60"
+            className="shrink-0 rounded border border-current px-3 py-1 text-xs hover:bg-background/60"
           >
             実行する →
           </Link>
@@ -239,7 +241,7 @@ function KpiCard({
     <Card>
       <CardContent className="py-4">
         <div className="text-xs text-muted-foreground">{label}</div>
-        <div className={`mt-1 text-2xl font-bold tabular-nums ${warning ? 'text-amber-700' : ''}`}>
+        <div className={`mt-1 text-2xl font-bold tabular-nums ${warning ? 'text-amber-700 dark:text-amber-300' : ''}`}>
           {value}
         </div>
         {delta && (

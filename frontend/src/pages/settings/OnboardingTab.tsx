@@ -91,14 +91,20 @@ export default function OnboardingTab() {
         <CardContent>
           <div className="text-sm">
             進捗:&nbsp;
-            <span className={done === total ? 'font-bold text-emerald-700' : 'font-bold'}>
+            <span
+              className={
+                done === total
+                  ? 'font-bold text-emerald-700 dark:text-emerald-300'
+                  : 'font-bold'
+              }
+            >
               {done}/{total}
             </span>
             {done === total && '  🎉 セットアップ完了'}
           </div>
-          <div className="mt-2 h-2 w-full overflow-hidden rounded bg-slate-200">
+          <div className="mt-2 h-2 w-full overflow-hidden rounded bg-muted">
             <div
-              className="h-2 bg-emerald-500"
+              className="h-2 bg-emerald-500 dark:bg-emerald-400"
               style={{ width: `${Math.round((done / total) * 100)}%` }}
             />
           </div>
@@ -119,7 +125,7 @@ export default function OnboardingTab() {
                     className={`mt-1 h-6 w-6 shrink-0 rounded border text-center text-sm ${
                       checked
                         ? 'border-emerald-500 bg-emerald-500 text-white'
-                        : 'border-slate-300 bg-white'
+                        : 'border-border bg-card'
                     }`}
                   >
                     {checked ? '✓' : ''}
@@ -132,7 +138,7 @@ export default function OnboardingTab() {
                   </div>
                   <Link
                     to={s.target}
-                    className="self-center rounded border px-3 py-1 text-xs hover:bg-slate-50"
+                    className="self-center rounded border border-border px-3 py-1 text-xs hover:bg-muted"
                   >
                     開く →
                   </Link>

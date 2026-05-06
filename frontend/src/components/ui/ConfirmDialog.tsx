@@ -44,7 +44,7 @@ export function useConfirm() {
       onClick={() => close(false)}
     >
       <div
-        className="mx-4 w-full max-w-md rounded-lg bg-white p-5 shadow-xl"
+        className="mx-4 w-full max-w-md rounded-lg border border-border bg-card p-5 text-card-foreground shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-base font-semibold">{state.title}</div>

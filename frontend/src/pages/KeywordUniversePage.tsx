@@ -37,7 +37,7 @@ const OPPORTUNITY_LABEL: Record<string, { label: string; tone: string }> = {
     tone: 'bg-amber-100 text-amber-900',
   },
   near_top_3: { label: 'TOP3 近い: リライト機会', tone: 'bg-emerald-100 text-emerald-900' },
-  low_demand: { label: '需要薄', tone: 'bg-slate-100 text-slate-600' },
+  low_demand: { label: '需要薄', tone: 'bg-secondary text-muted-foreground' },
 };
 
 const FLAG_FILTER_OPTIONS: Array<{ value: OpportunityFlag | ''; label: string }> = [
@@ -226,7 +226,9 @@ export default function KeywordUniversePage() {
                 <span
                   key={r.id}
                   className={`rounded px-2 py-0.5 text-xs ${
-                    primaryKw === r.id ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-800'
+                    primaryKw === r.id
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-secondary text-secondary-foreground'
                   }`}
                 >
                   {r.keyword}
@@ -268,7 +270,7 @@ export default function KeywordUniversePage() {
       <Card>
         <CardContent className="overflow-auto p-0">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-2 py-2 text-center">採用</th>
                 <th className="px-2 py-2 text-center">主軸</th>
@@ -305,7 +307,7 @@ export default function KeywordUniversePage() {
                 const isSelected = !!selected[r.id];
                 const isPrimary = primaryKw === r.id;
                 return (
-                  <tr key={r.id} className="border-t hover:bg-slate-50">
+                  <tr key={r.id} className="border-t border-border hover:bg-muted/50">
                     <td className="px-2 py-2 text-center">
                       <input
                         type="checkbox"
@@ -328,7 +330,7 @@ export default function KeywordUniversePage() {
                         {r.cluster_ids.map((cid) => (
                           <span
                             key={cid}
-                            className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700"
+                            className="rounded bg-secondary px-1.5 py-0.5 text-xs text-secondary-foreground"
                           >
                             {CLUSTER_LABEL[cid] ?? cid}
                           </span>
@@ -357,7 +359,7 @@ export default function KeywordUniversePage() {
                           {flagInfo.label}
                         </span>
                       ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <span className="text-xs text-muted-foreground/60">—</span>
                       )}
                     </td>
                   </tr>
@@ -434,8 +436,8 @@ function ClusterPill({
       onClick={onClick}
       className={`rounded-full border px-3 py-1 text-xs transition ${
         active
-          ? 'border-slate-900 bg-slate-900 text-white'
-          : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+          ? 'border-primary bg-primary text-primary-foreground'
+          : 'border-border bg-card text-card-foreground hover:bg-muted'
       }`}
     >
       {label}

@@ -5,9 +5,10 @@ import { listJobs, type JobLog } from '@/api/system_status';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 
 const STATUS_TONE: Record<JobLog['status'], string> = {
-  success: 'bg-emerald-100 text-emerald-800',
-  failed: 'bg-rose-100 text-rose-900',
-  running: 'bg-amber-100 text-amber-900',
+  success:
+    'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100',
+  failed: 'bg-rose-100 text-rose-900 dark:bg-rose-900/40 dark:text-rose-100',
+  running: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100',
 };
 
 const fmtDt = (iso: string) => new Date(iso).toLocaleString('ja-JP');
@@ -57,11 +58,11 @@ export default function SystemStatusTab() {
       <CardContent className="overflow-auto p-0">
         <div className="flex flex-wrap gap-3 px-4 py-3 text-xs text-muted-foreground">
           <span>件数: {total}</span>
-          <span className={failed > 0 ? 'text-rose-700' : ''}>失敗: {failed}</span>
+          <span className={failed > 0 ? 'text-rose-700 dark:text-rose-300' : ''}>失敗: {failed}</span>
           <span>実行中: {running}</span>
         </div>
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-2">ジョブ名</th>
               <th className="px-4 py-2">状態</th>
@@ -87,7 +88,7 @@ export default function SystemStatusTab() {
               </tr>
             )}
             {data?.map((j) => (
-              <tr key={j.id} className="border-t hover:bg-slate-50">
+              <tr key={j.id} className="border-t border-border hover:bg-muted/50">
                 <td className="px-4 py-2 font-medium">{j.job_name}</td>
                 <td className="px-4 py-2">
                   <span className={`inline-block rounded px-2 py-0.5 text-xs ${STATUS_TONE[j.status]}`}>
@@ -99,7 +100,7 @@ export default function SystemStatusTab() {
                 <td className="px-4 py-2 text-right tabular-nums text-xs">
                   {fmtDur(j.duration_seconds)}
                 </td>
-                <td className="px-4 py-2 text-xs text-rose-700">
+                <td className="px-4 py-2 text-xs text-rose-700 dark:text-rose-300">
                   {j.error_text ? j.error_text.slice(0, 80) : ''}
                 </td>
               </tr>

@@ -48,18 +48,27 @@ export default function ContentBriefDetailPage() {
           <CardTitle>{b.title}</CardTitle>
           <p className="mt-2 text-sm text-muted-foreground">{b.meta_description ?? '(meta未設定)'}</p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            <span className="rounded bg-slate-100 px-2 py-0.5">主軸: {b.primary_keyword}</span>
+            <span className="rounded bg-secondary px-2 py-0.5 text-secondary-foreground">
+              主軸: {b.primary_keyword}
+            </span>
             {b.target_url_slug && (
-              <span className="rounded bg-slate-100 px-2 py-0.5">slug: /{b.target_url_slug}/</span>
+              <span className="rounded bg-secondary px-2 py-0.5 text-secondary-foreground">
+                slug: /{b.target_url_slug}/
+              </span>
             )}
             {b.cluster_ids.map((c) => (
-              <span key={c} className="rounded bg-blue-100 px-2 py-0.5 text-blue-800">
+              <span
+                key={c}
+                className="rounded bg-blue-100 px-2 py-0.5 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100"
+              >
                 {c}
               </span>
             ))}
-            <span className="rounded bg-slate-100 px-2 py-0.5">状態: {b.status}</span>
+            <span className="rounded bg-secondary px-2 py-0.5 text-secondary-foreground">
+              状態: {b.status}
+            </span>
             {b.wp_draft_id && (
-              <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">
+              <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100">
                 WP下書き #{b.wp_draft_id}
               </span>
             )}
@@ -70,13 +79,13 @@ export default function ContentBriefDetailPage() {
             {publish.isPending ? '送信中…' : '📝 WordPress下書きにする'}
           </Button>
           {publish.isSuccess && publish.data && (
-            <span className="text-sm text-emerald-700">
+            <span className="text-sm text-emerald-700 dark:text-emerald-300">
               下書き作成完了 (post id: {publish.data.wp_draft_id})
               {publish.data.wp_post_url && (
                 <>
                   &nbsp;
                   <a
-                    className="text-blue-700 underline"
+                    className="text-primary underline"
                     target="_blank"
                     rel="noreferrer"
                     href={publish.data.wp_post_url}
@@ -88,11 +97,11 @@ export default function ContentBriefDetailPage() {
             </span>
           )}
           {publish.isError && (
-            <span className="text-sm text-red-600">
+            <span className="text-sm text-destructive">
               {(publish.error as Error)?.message ?? 'WP送信に失敗しました'}
             </span>
           )}
-          <Link to="/production/briefs" className="ml-auto text-sm text-blue-700 hover:underline">
+          <Link to="/production/briefs" className="ml-auto text-sm text-primary hover:underline">
             ← 一覧に戻る
           </Link>
           <Button
@@ -119,7 +128,7 @@ export default function ContentBriefDetailPage() {
         <CardContent>
           <div className="flex flex-wrap gap-2 text-xs">
             {b.selected_keywords.map((k) => (
-              <span key={k} className="rounded border border-slate-200 px-2 py-1">
+              <span key={k} className="rounded border border-border px-2 py-1">
                 {k}
               </span>
             ))}
@@ -133,15 +142,18 @@ export default function ContentBriefDetailPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {b.h2_outline.map((h, i) => (
-            <div key={i} className="rounded border-l-4 border-blue-500 bg-slate-50 p-3">
+            <div key={i} className="rounded border-l-4 border-primary bg-muted p-3">
               <div className="font-semibold">
                 h2#{i + 1}: {h.h2}
               </div>
               {h.target_keywords.length > 0 && (
-                <div className="mt-1 flex flex-wrap gap-1 text-xs">
-                  対策キーワード:
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-xs">
+                  <span className="text-muted-foreground">対策キーワード:</span>
                   {h.target_keywords.map((k) => (
-                    <span key={k} className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
+                    <span
+                      key={k}
+                      className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100"
+                    >
                       {k}
                     </span>
                   ))}
@@ -163,7 +175,10 @@ export default function ContentBriefDetailPage() {
           <CardContent>
             <div className="flex flex-wrap gap-2 text-xs">
               {b.related_keywords.map((k) => (
-                <span key={k} className="rounded bg-slate-100 px-2 py-1">
+                <span
+                  key={k}
+                  className="rounded bg-secondary px-2 py-1 text-secondary-foreground"
+                >
                   {k}
                 </span>
               ))}

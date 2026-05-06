@@ -7,10 +7,20 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { TableSkeleton } from '@/components/ui/Skeleton';
 
+// dark/light 両対応のステータス pill。前景/背景を dark: バリアントで上書き。
 const STATUS_LABEL: Record<string, { label: string; tone: string }> = {
-  draft: { label: '下書き', tone: 'bg-slate-100 text-slate-700' },
-  adopted: { label: 'WP送信済', tone: 'bg-emerald-100 text-emerald-800' },
-  published: { label: '公開済', tone: 'bg-blue-100 text-blue-800' },
+  draft: {
+    label: '下書き',
+    tone: 'bg-secondary text-secondary-foreground',
+  },
+  adopted: {
+    label: 'WP送信済',
+    tone: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100',
+  },
+  published: {
+    label: '公開済',
+    tone: 'bg-blue-100 text-blue-900 dark:bg-blue-900/40 dark:text-blue-100',
+  },
 };
 
 export default function ContentBriefsPage() {
@@ -65,7 +75,7 @@ export default function ContentBriefsPage() {
       <Card>
         <CardContent className="overflow-auto p-0">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-2">タイトル</th>
                 <th className="px-4 py-2">主軸キーワード</th>
@@ -94,14 +104,17 @@ export default function ContentBriefsPage() {
               {list.data?.map((b) => {
                 const status = STATUS_LABEL[b.status] ?? STATUS_LABEL.draft;
                 return (
-                  <tr key={b.id} className="border-t hover:bg-slate-50">
+                  <tr key={b.id} className="border-t border-border hover:bg-muted/50">
                     <td className="px-4 py-2 font-medium">
-                      <Link to={`/content-briefs/${b.id}`} className="text-blue-700 hover:underline">
+                      <Link
+                        to={`/production/briefs/${b.id}`}
+                        className="text-primary hover:underline"
+                      >
                         {b.title}
                       </Link>
                     </td>
                     <td className="px-4 py-2">{b.primary_keyword}</td>
-                    <td className="px-4 py-2 text-xs text-slate-600">
+                    <td className="px-4 py-2 text-xs text-muted-foreground">
                       {b.cluster_ids.join(', ')}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums">
@@ -112,7 +125,7 @@ export default function ContentBriefsPage() {
                         {status.label}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-500">
+                    <td className="px-4 py-2 text-xs text-muted-foreground">
                       {new Date(b.created_at).toLocaleString('ja-JP')}
                     </td>
                     <td className="px-4 py-2 text-right">
