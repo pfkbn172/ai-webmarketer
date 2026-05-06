@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.scheduler.jobs.collect_competitor_rss import job as job_competitor_rss
 from app.scheduler.jobs.collect_ga4 import job as job_ga4
 from app.scheduler.jobs.collect_gsc import job as job_gsc
+from app.scheduler.jobs.collect_keyword_suggestions import job as job_keyword_suggestions
 from app.scheduler.jobs.collect_pagespeed import job as job_pagespeed
 from app.scheduler.jobs.evaluate_alerts import job as job_alerts
 from app.scheduler.jobs.generate_monthly_report import job as job_monthly
@@ -32,6 +33,11 @@ SCHEDULE = {
     "collect_pagespeed": CronTrigger(hour=5, minute=30, timezone="Asia/Tokyo"),
     # アラートは GSC/GA4 取り込み後の毎日 6:30
     "evaluate_alerts": CronTrigger(hour=6, minute=30, timezone="Asia/Tokyo"),
+    # キーワードサジェスト収集は週次(月曜 4:30、citation の後)。
+    # Google/Bing への負荷とトレンド更新頻度を考慮して週次。
+    "collect_keyword_suggestions": CronTrigger(
+        day_of_week="mon", hour=4, minute=30, timezone="Asia/Tokyo"
+    ),
     # 週次サマリは月曜のまま
     "generate_weekly_summary": CronTrigger(
         day_of_week="mon", hour=6, minute=0, timezone="Asia/Tokyo"
@@ -57,5 +63,10 @@ def build_scheduler() -> AsyncIOScheduler:
     )
     scheduler.add_job(job_alerts, SCHEDULE["evaluate_alerts"], id="evaluate_alerts")
     scheduler.add_job(job_pagespeed, SCHEDULE["collect_pagespeed"], id="collect_pagespeed")
+    scheduler.add_job(
+        job_keyword_suggestions,
+        SCHEDULE["collect_keyword_suggestions"],
+        id="collect_keyword_suggestions",
+    )
     log.info("scheduler_built", jobs=list(SCHEDULE.keys()))
     return scheduler
