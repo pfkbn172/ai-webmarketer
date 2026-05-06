@@ -15,7 +15,10 @@ from app.collectors.google_oauth import (
 from app.db.models.enums import CredentialProviderEnum, JobStatusEnum
 from app.db.models.ga4_ai_referral_daily import Ga4AiReferralDaily
 from app.db.models.ga4_daily_metric import Ga4DailyMetric
+from app.db.models.ga4_hourly_metric import Ga4HourlyMetric
 from app.db.models.ga4_page_daily import Ga4PageDaily
+from app.db.models.ga4_referral_daily import Ga4ReferralDaily
+from app.db.models.ga4_referral_hourly import Ga4ReferralHourly
 from app.db.models.job_execution_log import JobExecutionLog
 from app.db.repositories.tenant_credential import TenantCredentialRepository
 from app.utils.logger import get_logger
@@ -52,10 +55,16 @@ async def run_for_tenant(
         rows = await client.daily_metrics(start, end)
         ai_rows = await client.ai_referrals(start, end)
         page_rows = await client.page_metrics(start, end)
+        hourly_rows = await client.hourly_metrics(start, end)
+        ref_rows = await client.referrals_daily(start, end)
+        ref_hourly_rows = await client.referrals_hourly(start, end)
 
         await _upsert_metrics(session, tenant_id, rows)
         await _upsert_ai_referrals(session, tenant_id, ai_rows)
         await _upsert_page_rows(session, tenant_id, page_rows)
+        await _upsert_hourly_rows(session, tenant_id, hourly_rows)
+        await _upsert_referral_daily(session, tenant_id, ref_rows)
+        await _upsert_referral_hourly(session, tenant_id, ref_hourly_rows)
 
         job_log.status = JobStatusEnum.success
         job_log.finished_at = datetime.now(UTC)
@@ -63,6 +72,9 @@ async def run_for_tenant(
             "row_count": len(rows),
             "ai_referral_rows": len(ai_rows),
             "page_rows": len(page_rows),
+            "hourly_rows": len(hourly_rows),
+            "referral_rows": len(ref_rows),
+            "referral_hourly_rows": len(ref_hourly_rows),
             "start": start.isoformat(),
             "end": end.isoformat(),
         }
@@ -155,6 +167,92 @@ async def _upsert_page_rows(
         },
     )
     await session.execute(stmt)
+
+
+async def _upsert_hourly_rows(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tid, true)"),
+        {"tid": str(tenant_id)},
+    )
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "hour": r.hour,
+            "sessions": r.sessions,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4HourlyMetric).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_hourly_tenant_date_hour",
+        set_={"sessions": stmt.excluded.sessions},
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_referral_daily(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tid, true)"),
+        {"tid": str(tenant_id)},
+    )
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "source": r.source,
+            "medium": r.medium,
+            "sessions": r.sessions,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4ReferralDaily).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_ref_d_tenant_date_src_med",
+        set_={"sessions": stmt.excluded.sessions},
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_referral_hourly(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tid, true)"),
+        {"tid": str(tenant_id)},
+    )
+    # cardinality が大きく asyncpg の bind 変数上限(32767)に当たるため、
+    # 5000 行ずつチャンクして INSERT する。
+    CHUNK = 5000
+    for i in range(0, len(rows), CHUNK):
+        chunk = rows[i : i + CHUNK]
+        payload = [
+            {
+                "tenant_id": tenant_id,
+                "date": r.date,
+                "hour": r.hour,
+                "source": r.source,
+                "medium": r.medium,
+                "sessions": r.sessions,
+            }
+            for r in chunk
+        ]
+        stmt = pg_insert(Ga4ReferralHourly).values(payload)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_ga4_ref_h_tenant_date_hour_src_med",
+            set_={"sessions": stmt.excluded.sessions},
+        )
+        await session.execute(stmt)
 
 
 async def _upsert_ai_referrals(

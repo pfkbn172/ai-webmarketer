@@ -52,6 +52,30 @@ class Ga4PageRow:
     conversions: int
 
 
+@dataclass(frozen=True, slots=True)
+class Ga4HourlyRow:
+    date: date
+    hour: int  # 0〜23
+    sessions: int
+
+
+@dataclass(frozen=True, slots=True)
+class Ga4ReferralRow:
+    date: date
+    source: str
+    medium: str
+    sessions: int
+
+
+@dataclass(frozen=True, slots=True)
+class Ga4ReferralHourlyRow:
+    date: date
+    hour: int
+    source: str
+    medium: str
+    sessions: int
+
+
 # AI チャットからの流入を判定する参照元ホスト名(GA4 sessionSource)。
 # GA4 が source として返す値は、参照元 URL のホスト名(www.* は除いた形)。
 # 値の整形は collector 側で行う。
@@ -186,6 +210,110 @@ class Ga4Client:
                     sessions=sessions,
                     users=int(row.metric_values[1].value or 0),
                     conversions=int(float(row.metric_values[2].value or 0)),
+                )
+            )
+        return out
+
+    async def hourly_metrics(self, start: date, end: date) -> list[Ga4HourlyRow]:
+        """日付 × 時間帯のセッション数。GA4 の dateHour ディメンション(YYYYMMDDHH)を使う。
+
+        曜日 × 時間帯ヒートマップで「どの時間帯にトラフィックが集中しているか」を
+        可視化するため。
+        """
+        req = RunReportRequest(
+            property=self._property,
+            date_ranges=[DateRange(start_date=start.isoformat(), end_date=end.isoformat())],
+            dimensions=[Dimension(name="dateHour")],
+            metrics=[Metric(name="sessions")],
+        )
+        resp = self._client.run_report(req)
+        out: list[Ga4HourlyRow] = []
+        for row in resp.rows:
+            sessions = int(row.metric_values[0].value or 0)
+            if sessions <= 0:
+                continue
+            raw = row.dimension_values[0].value or ""
+            if len(raw) != 10 or not raw.isdigit():
+                continue
+            d = date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
+            h = int(raw[8:10])
+            if not 0 <= h <= 23:
+                continue
+            out.append(Ga4HourlyRow(date=d, hour=h, sessions=sessions))
+        return out
+
+    async def referrals_daily(self, start: date, end: date) -> list[Ga4ReferralRow]:
+        """全リファラ × 日次セッション。
+
+        Direct は GA4 上 source='(direct)' / medium='(none)' で返る。
+        organic は medium='organic'、SNS や外部サイトは medium='referral'。
+        広告は cpc / paid 等。
+        """
+        req = RunReportRequest(
+            property=self._property,
+            date_ranges=[DateRange(start_date=start.isoformat(), end_date=end.isoformat())],
+            dimensions=[
+                Dimension(name="date"),
+                Dimension(name="sessionSource"),
+                Dimension(name="sessionMedium"),
+            ],
+            metrics=[Metric(name="sessions")],
+        )
+        resp = self._client.run_report(req)
+        out: list[Ga4ReferralRow] = []
+        for row in resp.rows:
+            sessions = int(row.metric_values[0].value or 0)
+            if sessions <= 0:
+                continue
+            out.append(
+                Ga4ReferralRow(
+                    date=_parse_ga4_date(row.dimension_values[0].value),
+                    source=(row.dimension_values[1].value or "")[:255] or "(not set)",
+                    medium=(row.dimension_values[2].value or "")[:64] or "(not set)",
+                    sessions=sessions,
+                )
+            )
+        return out
+
+    async def referrals_hourly(
+        self, start: date, end: date
+    ) -> list[Ga4ReferralHourlyRow]:
+        """全リファラ × 時間帯 × 日次セッション。
+
+        dateHour(YYYYMMDDHH)+ source + medium を使う。cardinality が大きくなるため、
+        本メソッドは「最近 N 日」など短期窓で叩く想定。バックフィル時は呼び出し側で
+        週単位など短いチャンクに分割する。
+        """
+        req = RunReportRequest(
+            property=self._property,
+            date_ranges=[DateRange(start_date=start.isoformat(), end_date=end.isoformat())],
+            dimensions=[
+                Dimension(name="dateHour"),
+                Dimension(name="sessionSource"),
+                Dimension(name="sessionMedium"),
+            ],
+            metrics=[Metric(name="sessions")],
+        )
+        resp = self._client.run_report(req)
+        out: list[Ga4ReferralHourlyRow] = []
+        for row in resp.rows:
+            sessions = int(row.metric_values[0].value or 0)
+            if sessions <= 0:
+                continue
+            raw = row.dimension_values[0].value or ""
+            if len(raw) != 10 or not raw.isdigit():
+                continue
+            d = date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
+            h = int(raw[8:10])
+            if not 0 <= h <= 23:
+                continue
+            out.append(
+                Ga4ReferralHourlyRow(
+                    date=d,
+                    hour=h,
+                    source=(row.dimension_values[1].value or "")[:255] or "(not set)",
+                    medium=(row.dimension_values[2].value or "")[:64] or "(not set)",
+                    sessions=sessions,
                 )
             )
         return out

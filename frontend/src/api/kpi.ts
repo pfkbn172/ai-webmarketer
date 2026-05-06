@@ -17,6 +17,14 @@ export type KpiMetric = {
   yoy_pct: number | null;
 };
 
+export type KpiRateMetric = {
+  value: number;
+  prev_period_value: number;
+  delta_pct: number | null;
+  prev_year_value: number | null;
+  yoy_pct: number | null;
+};
+
 export type DataCoverage = {
   sessions_since: string | null;
   citations_since: string | null;
@@ -33,6 +41,7 @@ export type KpiSummary = {
   contents_published: number;
   series: KpiPoint[];
   metrics: Record<string, KpiMetric>;
+  rate_metrics?: Record<string, KpiRateMetric>;
   coverage: DataCoverage;
 };
 

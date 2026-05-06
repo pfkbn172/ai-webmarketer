@@ -40,6 +40,16 @@ class KpiMetric(BaseModel):
     yoy_pct: float | None = None
 
 
+class KpiRateMetric(BaseModel):
+    """率系 KPI(CVR など)。値は %(0〜100+)。"""
+
+    value: float
+    prev_period_value: float
+    delta_pct: float | None
+    prev_year_value: float | None = None
+    yoy_pct: float | None = None
+
+
 class DataCoverage(BaseModel):
     """各データソースの DB 蓄積開始日。YoY が出せるかをフロントで判定するのに使う。"""
 
@@ -59,6 +69,8 @@ class KpiSummaryOut(BaseModel):
     series: list[KpiPoint]
     # Phase 2 拡張: 各 KPI に前期間比較を付ける
     metrics: dict[str, KpiMetric]
+    # 率系 KPI(リード CVR 等)。int に丸めず % のまま保持する。
+    rate_metrics: dict[str, KpiRateMetric] = {}
     coverage: DataCoverage
 
 
@@ -66,6 +78,21 @@ def _delta_pct(curr: int, prev: int) -> float | None:
     if prev == 0:
         return None
     return round((curr - prev) / prev * 100, 1)
+
+
+def _delta_pct_float(curr: float, prev: float) -> float | None:
+    if prev == 0:
+        return None
+    return round((curr - prev) / prev * 100, 1)
+
+
+def _cvr(inquiries: int, sessions: int) -> float:
+    """リード CVR (%) = 問い合わせ ÷ セッション × 100。
+    セッションが 0 のときは 0.0 を返す(KpiMetric.value は int 型なので bp = %×100 で保持)。
+    """
+    if sessions <= 0:
+        return 0.0
+    return round(inquiries / sessions * 100, 4)
 
 
 async def _count_citations(
@@ -345,6 +372,10 @@ async def kpi_summary(
     yoy_inquiries = await _count_inquiries(session, tenant_id, yoy_start, yoy_end)
     yoy_contents = await _count_contents(session, tenant_id, yoy_start, yoy_end)
 
+    cvr_curr = _cvr(int(inq_total), int(sessions_total))
+    cvr_prev = _cvr(int(prev_inquiries), int(prev_sessions))
+    cvr_yoy = _cvr(int(yoy_inquiries), int(yoy_sessions))
+
     metrics = {
         "ai_citation_count": KpiMetric(
             value=int(citation_total),
@@ -373,6 +404,16 @@ async def kpi_summary(
             delta_pct=_delta_pct(contents_published, prev_contents),
             prev_year_value=int(yoy_contents),
             yoy_pct=_delta_pct(contents_published, yoy_contents),
+        ),
+    }
+
+    rate_metrics = {
+        "lead_cvr": KpiRateMetric(
+            value=cvr_curr,
+            prev_period_value=cvr_prev,
+            delta_pct=_delta_pct_float(cvr_curr, cvr_prev),
+            prev_year_value=cvr_yoy,
+            yoy_pct=_delta_pct_float(cvr_curr, cvr_yoy),
         ),
     }
 
@@ -409,5 +450,6 @@ async def kpi_summary(
         contents_published=int(contents_published),
         series=series,
         metrics=metrics,
+        rate_metrics=rate_metrics,
         coverage=coverage,
     )

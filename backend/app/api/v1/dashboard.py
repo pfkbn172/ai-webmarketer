@@ -14,7 +14,7 @@ KPI summary は kpi.py に分離、本ファイルはそれ以外のブロック
 
 import uuid
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -610,6 +610,7 @@ class PagePerformanceRow(BaseModel):
     sessions: int
     clicks: int
     impressions: int
+    ctr: float | None  # クリック率 0〜1。clicks / impressions(impressions=0 のとき null)
     avg_position: float | None
     citation_count: int  # 自社が引用された AI モニタログのうち、このページが含まれた回数
 
@@ -726,13 +727,17 @@ async def page_performance(
     out: list[PagePerformanceRow] = []
     for path in all_paths:
         gsc_v = gsc_by_path.get(path) or {}
+        clicks_v = int(gsc_v.get("clicks") or 0)
+        impr_v = int(gsc_v.get("impressions") or 0)
+        ctr_v = round(clicks_v / impr_v, 4) if impr_v > 0 else None
         out.append(
             PagePerformanceRow(
                 page_path=path,
                 title=title_by_path.get(path) or title_by_url.get(path),
                 sessions=ga4_map.get(path, 0),
-                clicks=int(gsc_v.get("clicks") or 0),
-                impressions=int(gsc_v.get("impressions") or 0),
+                clicks=clicks_v,
+                impressions=impr_v,
+                ctr=ctr_v,
                 avg_position=gsc_v.get("position"),
                 citation_count=citation_count_by_path.get(path, 0),
             )
@@ -1482,6 +1487,182 @@ async def seasonality(
     ]
 
 
+# === E1. リファラ Top + 時間別ドリルダウン ===
+
+
+class ReferralRow(BaseModel):
+    source: str
+    medium: str
+    sessions: int
+
+
+class ReferralTopOut(BaseModel):
+    period_days: int
+    total_sessions: int  # 期間内の全セッション(GA4 上の合計、日次から)
+    rows: list[ReferralRow]
+
+
+@router.get("/referrals", response_model=ReferralTopOut)
+async def referrals_top(
+    days: int = 30,
+    limit: int = 15,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> ReferralTopOut:
+    """指定期間内のリファラ Top N(source / medium 別合計セッション)。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    rows = (
+        await session.execute(
+            text(
+                "SELECT source, medium, SUM(sessions)::int AS sessions "
+                "FROM ga4_referral_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY source, medium "
+                "ORDER BY sessions DESC LIMIT :limit"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end, "limit": limit},
+        )
+    ).all()
+    total = int(
+        (
+            await session.execute(
+                text(
+                    "SELECT COALESCE(SUM(sessions),0) FROM ga4_referral_daily "
+                    "WHERE tenant_id = :tid AND date BETWEEN :s AND :e"
+                ),
+                {"tid": str(tenant_id), "s": start, "e": end},
+            )
+        ).scalar()
+        or 0
+    )
+    return ReferralTopOut(
+        period_days=days,
+        total_sessions=total,
+        rows=[
+            ReferralRow(source=r.source, medium=r.medium, sessions=int(r.sessions))
+            for r in rows
+        ],
+    )
+
+
+class ReferralHourlyRow(BaseModel):
+    hour: int
+    source: str
+    medium: str
+    sessions: int
+
+
+class ReferralDayDetailOut(BaseModel):
+    target_date: date
+    total_sessions: int
+    daily_breakdown: list[ReferralRow]
+    hourly_rows: list[ReferralHourlyRow]
+
+
+@router.get("/referrals/day", response_model=ReferralDayDetailOut)
+async def referrals_day(
+    target_date: date,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> ReferralDayDetailOut:
+    """特定日のリファラ詳細(日合計 + 時間別)。スパイク日の原因特定用。"""
+    await _set_ctx(session, tenant_id)
+    daily_rows = (
+        await session.execute(
+            text(
+                "SELECT source, medium, sessions FROM ga4_referral_daily "
+                "WHERE tenant_id = :tid AND date = :d "
+                "ORDER BY sessions DESC"
+            ),
+            {"tid": str(tenant_id), "d": target_date},
+        )
+    ).all()
+    hourly_rows = (
+        await session.execute(
+            text(
+                "SELECT hour, source, medium, sessions FROM ga4_referral_hourly "
+                "WHERE tenant_id = :tid AND date = :d "
+                "ORDER BY hour, sessions DESC"
+            ),
+            {"tid": str(tenant_id), "d": target_date},
+        )
+    ).all()
+    total = sum(int(r.sessions) for r in daily_rows)
+    return ReferralDayDetailOut(
+        target_date=target_date,
+        total_sessions=total,
+        daily_breakdown=[
+            ReferralRow(source=r.source, medium=r.medium, sessions=int(r.sessions))
+            for r in daily_rows
+        ],
+        hourly_rows=[
+            ReferralHourlyRow(
+                hour=int(r.hour),
+                source=r.source,
+                medium=r.medium,
+                sessions=int(r.sessions),
+            )
+            for r in hourly_rows
+        ],
+    )
+
+
+# === E2. 曜日 × 時間帯ヒートマップ(GA4 hourly) ===
+
+
+class HourWeekdayCell(BaseModel):
+    weekday: int  # 0=月 ... 6=日
+    hour: int  # 0〜23
+    sessions: int  # 期間内のこの (曜日, 時間帯) のセッション総数
+
+
+class HourWeekdayHeatmapOut(BaseModel):
+    period_days: int
+    cells: list[HourWeekdayCell]
+    peaks: list[HourWeekdayCell]
+
+
+@router.get("/hour-weekday-heatmap", response_model=HourWeekdayHeatmapOut)
+async def hour_weekday_heatmap(
+    days: int = 90,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> HourWeekdayHeatmapOut:
+    """ga4_hourly_metrics を (曜日 × 時間帯) でグルーピングし、
+    指定期間内のセッション総数を返す。
+    """
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    rows = (
+        await session.execute(
+            text(
+                "SELECT ((EXTRACT(DOW FROM date)::int + 6) % 7) AS weekday, "
+                "hour, "
+                "SUM(sessions)::int AS sessions "
+                "FROM ga4_hourly_metrics "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY weekday, hour "
+                "ORDER BY weekday, hour"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    cells = [
+        HourWeekdayCell(
+            weekday=int(r.weekday),
+            hour=int(r.hour),
+            sessions=int(r.sessions or 0),
+        )
+        for r in rows
+    ]
+    peaks = sorted(cells, key=lambda c: c.sessions, reverse=True)[:5]
+    return HourWeekdayHeatmapOut(period_days=days, cells=cells, peaks=peaks)
+
+
 # === F. エリア別パフォーマンス ===
 
 
@@ -1636,3 +1817,400 @@ async def page_speed(
         )
         for r in rows
     ]
+
+
+# === チャネル別 CVR(セッション × 実測問い合わせソース)===
+
+
+class ChannelCvrRow(BaseModel):
+    channel: str  # 'AI Chat' / 'Organic Search' / 'Direct/Other'
+    sessions: int
+    inquiries: int
+    cvr: float | None  # 0〜1。問い合わせ ÷ セッション
+
+
+@router.get("/channel-cvr", response_model=list[ChannelCvrRow])
+async def channel_cvr(
+    days: int = 30,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[ChannelCvrRow]:
+    """流入チャネル別の CVR(問い合わせ ÷ セッション)。
+
+    チャネル定義(GA4 ベース):
+    - AI Chat:  ga4_ai_referral_daily.sessions の合計
+    - Organic Search: ga4_daily_metrics.organic_sessions の合計
+    - Direct/Other: 全セッション − Organic − AI
+
+    問い合わせ側は inquiries.source_channel を使い、AI 由来 (source_channel='ai')、
+    web 経由 (source_channel='web')、その他 (email/phone/other) で振り分ける。
+    web の内訳(Organic/Direct)は流入比で按分する。
+    """
+    from app.db.models.enums import InquirySourceEnum as _Src
+    from app.db.models.inquiry import Inquiry as _Inq
+
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    total_sessions = int(
+        (
+            await session.execute(
+                text(
+                    "SELECT COALESCE(SUM(sessions),0) FROM ga4_daily_metrics "
+                    "WHERE tenant_id = :tid AND date BETWEEN :s AND :e"
+                ),
+                {"tid": str(tenant_id), "s": start, "e": end},
+            )
+        ).scalar()
+        or 0
+    )
+    organic_sessions = int(
+        (
+            await session.execute(
+                text(
+                    "SELECT COALESCE(SUM(organic_sessions),0) FROM ga4_daily_metrics "
+                    "WHERE tenant_id = :tid AND date BETWEEN :s AND :e"
+                ),
+                {"tid": str(tenant_id), "s": start, "e": end},
+            )
+        ).scalar()
+        or 0
+    )
+    ai_sessions = int(
+        (
+            await session.execute(
+                text(
+                    "SELECT COALESCE(SUM(sessions),0) FROM ga4_ai_referral_daily "
+                    "WHERE tenant_id = :tid AND date BETWEEN :s AND :e"
+                ),
+                {"tid": str(tenant_id), "s": start, "e": end},
+            )
+        ).scalar()
+        or 0
+    )
+    other_sessions = max(0, total_sessions - organic_sessions - ai_sessions)
+
+    # 問い合わせをソース別に集計
+    inq_rows = (
+        await session.execute(
+            select(_Inq.source_channel, func.count(_Inq.id)).where(
+                _Inq.tenant_id == tenant_id,
+                func.date(_Inq.received_at).between(start, end),
+            ).group_by(_Inq.source_channel)
+        )
+    ).all()
+    inq_by_src: dict[str, int] = {r[0].value: int(r[1] or 0) for r in inq_rows}
+    inq_ai = inq_by_src.get(_Src.ai.value, 0)
+    inq_web = inq_by_src.get(_Src.web.value, 0)
+    # email/phone/other は Direct/Other に寄せる
+    inq_other_direct = (
+        inq_by_src.get(_Src.email.value, 0)
+        + inq_by_src.get(_Src.phone.value, 0)
+        + inq_by_src.get(_Src.other.value, 0)
+    )
+
+    # web 由来の問い合わせを Organic と Direct/Other に流入比で按分
+    web_session_base = organic_sessions + other_sessions
+    if web_session_base > 0:
+        inq_organic = round(inq_web * organic_sessions / web_session_base)
+        inq_direct = inq_web - inq_organic + inq_other_direct
+    else:
+        inq_organic = 0
+        inq_direct = inq_web + inq_other_direct
+
+    def _rate(c: int, s: int) -> float | None:
+        if s <= 0:
+            return None
+        return round(c / s, 4)
+
+    return [
+        ChannelCvrRow(
+            channel="AI Chat",
+            sessions=ai_sessions,
+            inquiries=inq_ai,
+            cvr=_rate(inq_ai, ai_sessions),
+        ),
+        ChannelCvrRow(
+            channel="Organic Search",
+            sessions=organic_sessions,
+            inquiries=inq_organic,
+            cvr=_rate(inq_organic, organic_sessions),
+        ),
+        ChannelCvrRow(
+            channel="Direct/Other",
+            sessions=other_sessions,
+            inquiries=inq_direct,
+            cvr=_rate(inq_direct, other_sessions),
+        ),
+    ]
+
+
+# === クエリ順位変動 Top N(上昇 / 下落)===
+
+
+class QueryRankChangeRow(BaseModel):
+    query_text: str
+    avg_position_recent: float | None
+    avg_position_prev: float | None
+    delta: float | None  # prev - recent。正なら順位が上昇(数字が小さくなる方向)
+    impressions_recent: int
+    clicks_recent: int
+
+
+class QueryRankChangesOut(BaseModel):
+    period_days: int
+    rising: list[QueryRankChangeRow]  # 上昇(delta が大きい順)
+    falling: list[QueryRankChangeRow]  # 下落(delta が小さい順)
+
+
+@router.get("/query-rank-changes", response_model=QueryRankChangesOut)
+async def query_rank_changes(
+    days: int = 14,
+    limit: int = 10,
+    min_impressions: int = 50,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> QueryRankChangesOut:
+    """直近 N 日と前 N 日でクエリ別平均順位の差分を計算し、上昇/下落の Top を返す。
+
+    - delta = prev - recent。プラス = 順位が上がった、マイナス = 下がった。
+    - 直近期間に min_impressions 未満のクエリは除外(ノイズ抑制)。
+    """
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    recent_start = end - timedelta(days=days - 1)
+    prev_end = recent_start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=days - 1)
+
+    rows = (
+        await session.execute(
+            text(
+                """
+                WITH recent AS (
+                    SELECT query_text,
+                           AVG(position) AS pos,
+                           SUM(impressions) AS impr,
+                           SUM(clicks) AS clk
+                    FROM gsc_query_metrics
+                    WHERE tenant_id = :tid AND date BETWEEN :rs AND :re
+                    GROUP BY query_text
+                ), prev AS (
+                    SELECT query_text,
+                           AVG(position) AS pos,
+                           SUM(impressions) AS impr
+                    FROM gsc_query_metrics
+                    WHERE tenant_id = :tid AND date BETWEEN :ps AND :pe
+                    GROUP BY query_text
+                )
+                SELECT r.query_text,
+                       r.pos AS recent_pos,
+                       p.pos AS prev_pos,
+                       r.impr AS recent_impr,
+                       r.clk AS recent_clk
+                FROM recent r
+                JOIN prev p USING (query_text)
+                WHERE r.impr >= :min_impr
+                  AND p.pos IS NOT NULL
+                  AND r.pos IS NOT NULL
+                """
+            ),
+            {
+                "tid": str(tenant_id),
+                "rs": recent_start,
+                "re": end,
+                "ps": prev_start,
+                "pe": prev_end,
+                "min_impr": min_impressions,
+            },
+        )
+    ).all()
+
+    items = []
+    for r in rows:
+        recent_pos = float(r.recent_pos) if r.recent_pos is not None else None
+        prev_pos = float(r.prev_pos) if r.prev_pos is not None else None
+        delta = (
+            round(prev_pos - recent_pos, 2)
+            if (recent_pos is not None and prev_pos is not None)
+            else None
+        )
+        items.append(
+            QueryRankChangeRow(
+                query_text=r.query_text,
+                avg_position_recent=round(recent_pos, 2) if recent_pos is not None else None,
+                avg_position_prev=round(prev_pos, 2) if prev_pos is not None else None,
+                delta=delta,
+                impressions_recent=int(r.recent_impr or 0),
+                clicks_recent=int(r.recent_clk or 0),
+            )
+        )
+
+    rising = sorted(
+        [i for i in items if i.delta is not None and i.delta > 0],
+        key=lambda x: (x.delta or 0),
+        reverse=True,
+    )[:limit]
+    falling = sorted(
+        [i for i in items if i.delta is not None and i.delta < 0],
+        key=lambda x: (x.delta or 0),
+    )[:limit]
+    return QueryRankChangesOut(
+        period_days=days, rising=rising, falling=falling
+    )
+
+
+# === データソース一覧(各ブロックの「いつのデータか」表示用)===
+
+
+class DataSourceInfo(BaseModel):
+    """1 データソース(=テーブル相当)の情報。"""
+
+    key: str  # フロントが参照するキー(例: 'ga4_daily', 'gsc_query', 'inquiries')
+    label: str  # 表示名(例: 'GA4 日次', 'GSC クエリ')
+    provider: str  # 'GA4' / 'GSC' / '内部DB' / 'PageSpeed' / 'AI Engine'
+    coverage_from: date | None  # 最古日付
+    coverage_to: date | None  # 最新日付
+    row_count: int  # 行数
+    last_job_at: datetime | None  # 最終収集ジョブ成功時刻
+    job_name: str | None  # 紐付くジョブ名
+
+
+@router.get("/data-sources", response_model=dict[str, DataSourceInfo])
+async def data_sources(
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, DataSourceInfo]:
+    """ダッシュボード各ブロックが依存するデータソースの最新状態を一覧で返す。
+
+    フロント側は要素ごとに必要なキーをルックアップして「いつのデータか」を表示する。
+    """
+    await _set_ctx(session, tenant_id)
+
+    # 主要テーブル定義: (キー, ラベル, プロバイダ, テーブル名, 日付カラム, 紐付くジョブ名)
+    sources: list[tuple[str, str, str, str, str, str | None]] = [
+        ("ga4_daily", "GA4 日次", "GA4", "ga4_daily_metrics", "date", "collect_ga4"),
+        ("ga4_hourly", "GA4 時間別", "GA4", "ga4_hourly_metrics", "date", "collect_ga4"),
+        ("ga4_page", "GA4 ページ別", "GA4", "ga4_page_daily", "date", "collect_ga4"),
+        (
+            "ga4_referral",
+            "GA4 リファラ",
+            "GA4",
+            "ga4_referral_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_referral_hourly",
+            "GA4 リファラ時間別",
+            "GA4",
+            "ga4_referral_hourly",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_ai_referral",
+            "GA4 AI 流入",
+            "GA4",
+            "ga4_ai_referral_daily",
+            "date",
+            "collect_ga4",
+        ),
+        ("gsc_page", "GSC ページ", "GSC", "gsc_page_metrics", "date", "collect_gsc"),
+        ("gsc_query", "GSC クエリ", "GSC", "gsc_query_metrics", "date", "collect_gsc"),
+        (
+            "citation",
+            "AI 引用ログ",
+            "AI モニタ",
+            "citation_logs",
+            "query_date",
+            "monitor_citation",
+        ),
+        (
+            "inquiries",
+            "問い合わせ",
+            "内部DB",
+            "inquiries",
+            "received_at::date",
+            None,
+        ),
+        (
+            "contents",
+            "公開記事",
+            "内部DB",
+            "contents",
+            "published_at::date",
+            None,
+        ),
+        (
+            "marketing_actions",
+            "施策タイムライン",
+            "内部DB",
+            "marketing_actions",
+            "action_date",
+            None,
+        ),
+        (
+            "page_speed",
+            "PageSpeed",
+            "PageSpeed",
+            "page_speed_metrics",
+            "date",
+            "collect_pagespeed",
+        ),
+        (
+            "competitor_post",
+            "競合投稿",
+            "RSS",
+            "competitor_posts",
+            "published_at::date",
+            "collect_competitor_rss",
+        ),
+    ]
+
+    # ジョブ最終成功時刻を一括取得
+    job_rows = (
+        await session.execute(
+            text(
+                "SELECT job_name, MAX(finished_at) AS last_at FROM job_execution_logs "
+                "WHERE (tenant_id = :tid OR tenant_id IS NULL) AND status = 'success' "
+                "GROUP BY job_name"
+            ),
+            {"tid": str(tenant_id)},
+        )
+    ).all()
+    last_job_by_name = {r.job_name: r.last_at for r in job_rows}
+
+    out: dict[str, DataSourceInfo] = {}
+    for key, label, provider, table, date_col, job_name in sources:
+        # contents は status='published' のみカバレッジ集計
+        where_clause = "tenant_id = :tid"
+        if table == "contents":
+            where_clause += " AND status = 'published' AND published_at IS NOT NULL"
+        try:
+            row = (
+                await session.execute(
+                    text(
+                        f"SELECT MIN({date_col}) AS mn, MAX({date_col}) AS mx, "
+                        f"COUNT(*) AS cnt FROM {table} WHERE {where_clause}"
+                    ),
+                    {"tid": str(tenant_id)},
+                )
+            ).one()
+            mn = row.mn
+            mx = row.mx
+            cnt = int(row.cnt or 0)
+        except Exception:
+            mn = mx = None
+            cnt = 0
+        out[key] = DataSourceInfo(
+            key=key,
+            label=label,
+            provider=provider,
+            coverage_from=mn,
+            coverage_to=mx,
+            row_count=cnt,
+            last_job_at=last_job_by_name.get(job_name) if job_name else None,
+            job_name=job_name,
+        )
+    return out

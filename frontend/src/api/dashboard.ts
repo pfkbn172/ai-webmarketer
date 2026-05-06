@@ -49,8 +49,31 @@ export type PagePerformanceRow = {
   sessions: number;
   clicks: number;
   impressions: number;
+  ctr: number | null;
   avg_position: number | null;
   citation_count: number;
+};
+
+export type ChannelCvrRow = {
+  channel: string;
+  sessions: number;
+  inquiries: number;
+  cvr: number | null;
+};
+
+export type QueryRankChangeRow = {
+  query_text: string;
+  avg_position_recent: number | null;
+  avg_position_prev: number | null;
+  delta: number | null;
+  impressions_recent: number;
+  clicks_recent: number;
+};
+
+export type QueryRankChanges = {
+  period_days: number;
+  rising: QueryRankChangeRow[];
+  falling: QueryRankChangeRow[];
 };
 
 export type FunnelStage = { status: string; count: number; amount_yen: number };
@@ -122,6 +145,55 @@ export type SeasonalityCell = {
   month: number;
   avg_sessions: number;
   samples: number;
+};
+
+export type HourWeekdayCell = {
+  weekday: number;
+  hour: number;
+  sessions: number;
+};
+
+export type HourWeekdayHeatmap = {
+  period_days: number;
+  cells: HourWeekdayCell[];
+  peaks: HourWeekdayCell[];
+};
+
+export type ReferralRow = {
+  source: string;
+  medium: string;
+  sessions: number;
+};
+
+export type ReferralTop = {
+  period_days: number;
+  total_sessions: number;
+  rows: ReferralRow[];
+};
+
+export type ReferralHourlyRow = {
+  hour: number;
+  source: string;
+  medium: string;
+  sessions: number;
+};
+
+export type ReferralDayDetail = {
+  target_date: string;
+  total_sessions: number;
+  daily_breakdown: ReferralRow[];
+  hourly_rows: ReferralHourlyRow[];
+};
+
+export type DataSourceInfo = {
+  key: string;
+  label: string;
+  provider: string;
+  coverage_from: string | null;
+  coverage_to: string | null;
+  row_count: number;
+  last_job_at: string | null;
+  job_name: string | null;
 };
 
 export type AreaPerformance = {
@@ -269,4 +341,45 @@ export async function fetchAreaPerformance(days = 90): Promise<AreaPerformance[]
 }
 export async function fetchPageSpeed(): Promise<PageSpeedRow[]> {
   return (await apiClient.get<PageSpeedRow[]>('/dashboard/page-speed')).data;
+}
+export async function fetchChannelCvr(days = 30): Promise<ChannelCvrRow[]> {
+  return (
+    await apiClient.get<ChannelCvrRow[]>('/dashboard/channel-cvr', { params: { days } })
+  ).data;
+}
+export async function fetchQueryRankChanges(
+  days = 14,
+  limit = 10,
+): Promise<QueryRankChanges> {
+  return (
+    await apiClient.get<QueryRankChanges>('/dashboard/query-rank-changes', {
+      params: { days, limit },
+    })
+  ).data;
+}
+export async function fetchHourWeekdayHeatmap(days = 90): Promise<HourWeekdayHeatmap> {
+  return (
+    await apiClient.get<HourWeekdayHeatmap>('/dashboard/hour-weekday-heatmap', {
+      params: { days },
+    })
+  ).data;
+}
+export async function fetchReferralsTop(days = 30, limit = 15): Promise<ReferralTop> {
+  return (
+    await apiClient.get<ReferralTop>('/dashboard/referrals', {
+      params: { days, limit },
+    })
+  ).data;
+}
+export async function fetchReferralsDay(targetDate: string): Promise<ReferralDayDetail> {
+  return (
+    await apiClient.get<ReferralDayDetail>('/dashboard/referrals/day', {
+      params: { target_date: targetDate },
+    })
+  ).data;
+}
+export async function fetchDataSources(): Promise<Record<string, DataSourceInfo>> {
+  return (
+    await apiClient.get<Record<string, DataSourceInfo>>('/dashboard/data-sources')
+  ).data;
 }
