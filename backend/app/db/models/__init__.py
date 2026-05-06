@@ -13,6 +13,7 @@ from app.db.models.citation_log import CitationLog
 from app.db.models.competitor import Competitor
 from app.db.models.competitor_post import CompetitorPost
 from app.db.models.content import Content
+from app.db.models.content_brief import ContentBrief
 from app.db.models.content_metric import ContentMetric
 from app.db.models.enums import (
     AiOriginEnum,
@@ -37,6 +38,8 @@ from app.db.models.gsc_page_metric import GscPageMetric
 from app.db.models.gsc_query_metric import GscQueryMetric
 from app.db.models.inquiry import Inquiry
 from app.db.models.job_execution_log import JobExecutionLog
+from app.db.models.keyword_suggestion import KeywordSuggestion
+from app.db.models.keyword_universe import KeywordUniverse
 from app.db.models.kpi_log import KpiLog
 from app.db.models.marketing_action import MarketingAction
 from app.db.models.page_speed_metric import PageSpeedMetric
@@ -61,6 +64,7 @@ __all__ = [
     "CompetitorPost",
     "ComplianceTypeEnum",
     "Content",
+    "ContentBrief",
     "ContentMetric",
     "Ga4AiReferralDaily",
     "Ga4DailyMetric",
@@ -77,6 +81,8 @@ __all__ = [
     "InquiryStatusEnum",
     "JobExecutionLog",
     "JobStatusEnum",
+    "KeywordSuggestion",
+    "KeywordUniverse",
     "KpiLog",
     "LLMProviderEnum",
     "MarketingAction",

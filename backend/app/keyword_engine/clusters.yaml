@@ -1,0 +1,125 @@
+# シノニム/関連語クラスタ定義
+#
+# 各クラスタは「同義/類義/関連が強くひとまとまりに扱う語」のグループ。
+# keyword_engine/cluster_matcher.py が keyword に対して上から順に
+# aliases を部分一致でチェックし、最初にマッチしたクラスタを割り当てる。
+# (= 上にあるクラスタほど優先度高)
+#
+# is_geographic: true のクラスタは地域系扱いで、
+#   「地域系で実需が極小なら priority_score 減点」のロジック対象になる。
+#
+# ローカルクラスタは具体地名(平野区/瓜破/喜連瓜破等)を上位、
+# 広域(大阪/関西)を下位にして、より具体的なものを優先割当てる。
+
+clusters:
+  # ---------- 地域系(優先度高) ----------
+  local_hiranoku:
+    label: "平野区ローカル"
+    is_geographic: true
+    aliases:
+      - "喜連瓜破"
+      - "瓜破"
+      - "平野区"
+      - "東住吉区"
+      - "松原市"
+      - "八尾市"
+      - "大阪南部"
+
+  local_osaka:
+    label: "大阪・関西ローカル"
+    is_geographic: true
+    aliases:
+      - "大阪市"
+      - "大阪府"
+      - "大阪"
+      - "関西"
+      - "近畿"
+
+  # ---------- 業者探索(購買意図) ----------
+  vendor_search:
+    label: "業者探索系"
+    intent: "vendor_search"
+    aliases:
+      - "コンサル"
+      - "コンサルタント"
+      - "顧問"
+      - "外注"
+      - "代行"
+      - "アウトソース"
+      - "サポート会社"
+      - "支援会社"
+      - "開発会社"
+      - "制作会社"
+
+  # ---------- 主軸テクノロジー語 ----------
+  dx:
+    label: "DX系"
+    aliases:
+      - "デジタルトランスフォーメーション"
+      - "dx化"
+      - "dx推進"
+      - "dx支援"
+      - "dx"
+
+  ai:
+    label: "AI系"
+    aliases:
+      - "生成ai"
+      - "人工知能"
+      - "機械学習"
+      - "ai活用"
+      - "ai導入"
+      - "ai"
+
+  automation:
+    label: "自動化/RPA系"
+    aliases:
+      - "rpa"
+      - "業務自動化"
+      - "自動化"
+      - "オートメーション"
+      - "power automate"
+
+  efficiency:
+    label: "業務効率化・生産性向上系"
+    aliases:
+      - "業務効率化"
+      - "業務改善"
+      - "業務改革"
+      - "生産性向上"
+      - "効率化"
+
+  digitization:
+    label: "デジタル化・IT化系"
+    aliases:
+      - "デジタル化"
+      - "it化"
+      - "電子化"
+      - "ペーパーレス"
+      - "システム化"
+
+  # ---------- 制度・補助金 ----------
+  subsidy:
+    label: "補助金・助成金系"
+    intent: "subsidy"
+    aliases:
+      - "補助金"
+      - "助成金"
+      - "it導入補助金"
+      - "事業再構築"
+      - "ものづくり補助金"
+
+  # ---------- ツール固有名 ----------
+  tool_specific:
+    label: "ツール固有名系"
+    aliases:
+      - "kintone"
+      - "salesforce"
+      - "chatgpt"
+      - "gemini"
+      - "claude"
+      - "copilot"
+      - "notion"
+      - "slack"
+      - "make"
+      - "zapier"
