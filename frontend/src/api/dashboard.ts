@@ -479,3 +479,98 @@ export async function fetchContactFunnel(days = 30): Promise<ContactFunnel> {
     })
   ).data;
 }
+
+// === 2026-05 追加: コンテンツ品質 + LP 別 ============================
+
+export type ArticleReadCompletionRow = {
+  page_path: string;
+  event_count: number;
+  page_views: number;
+  completion_rate: number | null;
+};
+
+export async function fetchArticleReadCompletion(
+  days = 30,
+  limit = 20,
+): Promise<ArticleReadCompletionRow[]> {
+  return (
+    await apiClient.get<ArticleReadCompletionRow[]>(
+      '/dashboard/article-read-completion',
+      { params: { days, limit } },
+    )
+  ).data;
+}
+
+export type TextCopyPageRow = {
+  page_path: string;
+  content_type: string;
+  event_count: number;
+};
+
+export type TextCopyOut = {
+  by_content_type: Record<string, number>;
+  top_pages: TextCopyPageRow[];
+};
+
+export async function fetchTextCopy(
+  days = 30,
+  limit = 10,
+): Promise<TextCopyOut> {
+  return (
+    await apiClient.get<TextCopyOut>('/dashboard/text-copy', {
+      params: { days, limit },
+    })
+  ).data;
+}
+
+export type OutboundCategoryRow = {
+  outbound_category: string;
+  event_count: number;
+};
+
+export type OutboundDomainRow = {
+  link_domain: string;
+  outbound_category: string;
+  event_count: number;
+};
+
+export type OutboundClicksOut = {
+  by_category: OutboundCategoryRow[];
+  top_domains: OutboundDomainRow[];
+};
+
+export async function fetchOutboundClicks(
+  days = 30,
+  limit = 20,
+): Promise<OutboundClicksOut> {
+  return (
+    await apiClient.get<OutboundClicksOut>('/dashboard/outbound-clicks', {
+      params: { days, limit },
+    })
+  ).data;
+}
+
+export type LpCtaByLpRow = {
+  lp_id: string;
+  event_count: number;
+  lp_sessions: number;
+  cvr: number | null;
+};
+
+export type LpCtaByPositionRow = {
+  cta_id: string;
+  event_count: number;
+};
+
+export type LpCtaClicksOut = {
+  by_lp: LpCtaByLpRow[];
+  by_position: LpCtaByPositionRow[];
+};
+
+export async function fetchLpCtaClicks(days = 30): Promise<LpCtaClicksOut> {
+  return (
+    await apiClient.get<LpCtaClicksOut>('/dashboard/lp-cta-clicks', {
+      params: { days },
+    })
+  ).data;
+}

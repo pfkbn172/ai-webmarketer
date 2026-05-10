@@ -33,6 +33,7 @@ import {
   fetchAiReferralEvents,
   fetchAiReferrals,
   fetchAlertRules,
+  fetchArticleReadCompletion,
   fetchContactFunnel,
   fetchDataSources,
   fetchAreaPerformance,
@@ -48,8 +49,10 @@ import {
   fetchHourWeekdayHeatmap,
   fetchKeywordOpportunity,
   fetchLlmsTxtFetches,
+  fetchLpCtaClicks,
   fetchNextActions,
   fetchObjectives,
+  fetchOutboundClicks,
   fetchPagePerformance,
   fetchPageRankDecay,
   fetchPageSpeed,
@@ -58,6 +61,7 @@ import {
   fetchReferralsTop,
   fetchSearchIntent,
   fetchSeasonality,
+  fetchTextCopy,
   fetchTopQueries,
   generateNextActionsWithAi,
   replaceAlertRules,
@@ -307,6 +311,26 @@ const HELP: Record<string, { title: string; what: string; watch: string }> = {
     title: 'コンタクトファネル',
     what: '/contact/ ページ訪問 → 確認画面到達 → 完了(GA4 キーイベント contact_complete)の 3 ステップで離脱率を可視化。',
     watch: '離脱が大きいステップが改善ポイント。確認画面 → 完了で大きく落ちている場合はフォーム入力負荷や送信ボタン位置を見直す。',
+  },
+  content_completion: {
+    title: '記事完読率',
+    what: 'article_read_complete(スクロール 90% + 60 秒以上滞在)÷ page_view。PV 10 件以上のページが対象。',
+    watch: '完読率の高いページ = 読者の信頼を得ている。低い完読率はリード文・見出しの最適化、関連記事の置き場所などで改善余地あり。',
+  },
+  content_text_copy: {
+    title: 'コピーされたコンテンツ',
+    what: 'text_copy イベント(本文の選択コピー検知)を content_type(code / table / text)別に集計。',
+    watch: 'コピーされている = ユーザーが「使いたい」と思った情報。コードや表のコピー多数 = 実用情報の評価が高い証拠。',
+  },
+  content_outbound: {
+    title: '外部リンクカテゴリ',
+    what: 'outbound_click を outbound_category(ai / social / booking / other)別に集計 + 上位ドメイン。',
+    watch: 'booking 系の外部クリックは予約導線。ai 系は AI 引用元への参照行動。social は SNS 拡散の可能性。',
+  },
+  lp_performance: {
+    title: 'LP 別パフォーマンス',
+    what: 'cta_click イベント(.cta-btn 等のクリック)を lp_id 別 + cta_id(lp-header / lp-body)別に集計。LP セッションから CVR も算出。',
+    watch: 'CVR の高い LP のレイアウトを他 LP に展開。header と body の比較で CTA 配置の最適解が見える。',
   },
 };
 
@@ -1102,6 +1126,313 @@ function LlmsTxtFetchBlock({ days }: { days: number }) {
                 );
               })}
             </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// === 2026-05 追加: コンテンツ品質 + LP 別 ============================
+
+const CONTENT_TYPE_LABEL: Record<string, string> = {
+  code: 'コード',
+  table: '表',
+  text: '本文',
+};
+
+const OUTBOUND_CATEGORY_LABEL: Record<string, string> = {
+  ai: 'AI 系',
+  social: 'SNS',
+  booking: '予約',
+  other: 'その他',
+};
+
+function ArticleReadCompletionBlock({ days }: { days: number }) {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'article-read-completion', days, 20],
+    queryFn: () => fetchArticleReadCompletion(days, 20),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="記事完読率(PV 比)"
+          help="content_completion"
+          ds={['ga4_article_read', 'ga4_page']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{AIO_EMPTY_HINT}</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground">
+              <tr>
+                <th className="py-1">ページ</th>
+                <th className="py-1 text-right">PV</th>
+                <th className="py-1 text-right">完読</th>
+                <th className="py-1 text-right">完読率</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((r) => {
+                const pct = r.completion_rate !== null ? r.completion_rate * 100 : null;
+                return (
+                  <tr key={r.page_path} className="border-t border-border">
+                    <td className="py-1 max-w-[16rem] truncate" title={r.page_path}>
+                      {r.page_path}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">{r.page_views}</td>
+                    <td className="py-1 text-right tabular-nums">{r.event_count}</td>
+                    <td className="py-1 text-right">
+                      {pct !== null ? (
+                        <div className="inline-flex items-center gap-2">
+                          <div className="h-2 w-12 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full bg-emerald-500/70"
+                              style={{ width: `${Math.min(100, pct)}%` }}
+                            />
+                          </div>
+                          <span className="tabular-nums">{pct.toFixed(1)}%</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TextCopyBlock({ days }: { days: number }) {
+  const { data, isPending } = useQuery({
+    queryKey: ['dashboard', 'text-copy', days, 10],
+    queryFn: () => fetchTextCopy(days, 10),
+  });
+  const totals = data?.by_content_type ?? {};
+  const totalAll = Object.values(totals).reduce((s, v) => s + (v ?? 0), 0);
+  const types = ['code', 'table', 'text'];
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="コピーされたコンテンツ"
+          help="content_text_copy"
+          ds={['ga4_text_copy']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : !data || (totalAll === 0 && data.top_pages.length === 0) ? (
+          <p className="text-sm text-muted-foreground">{AIO_EMPTY_HINT}</p>
+        ) : (
+          <div className="space-y-3">
+            <ul className="space-y-1 text-sm">
+              {types.map((t) => {
+                const v = totals[t] ?? 0;
+                const pct = totalAll > 0 ? (v / totalAll) * 100 : 0;
+                return (
+                  <li key={t} className="flex items-baseline justify-between">
+                    <span>{CONTENT_TYPE_LABEL[t] ?? t}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {v} ({pct.toFixed(0)}%)
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            {data.top_pages.length > 0 && (
+              <div className="border-t border-border pt-2">
+                <div className="mb-1 text-xs text-muted-foreground">
+                  TOP {data.top_pages.length} ページ
+                </div>
+                <ul className="space-y-1 text-xs">
+                  {data.top_pages.map((p) => (
+                    <li
+                      key={`${p.page_path}-${p.content_type}`}
+                      className="flex items-baseline justify-between gap-2"
+                    >
+                      <span className="truncate">
+                        <span className="text-muted-foreground mr-1">
+                          [{CONTENT_TYPE_LABEL[p.content_type] ?? p.content_type}]
+                        </span>
+                        {p.page_path}
+                      </span>
+                      <span className="tabular-nums shrink-0">{p.event_count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OutboundClicksBlock({ days }: { days: number }) {
+  const { data, isPending } = useQuery({
+    queryKey: ['dashboard', 'outbound-clicks', days, 20],
+    queryFn: () => fetchOutboundClicks(days, 20),
+  });
+  const total = (data?.by_category ?? []).reduce((s, c) => s + c.event_count, 0);
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="外部リンクカテゴリ別"
+          help="content_outbound"
+          ds={['ga4_outbound']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : !data || total === 0 ? (
+          <p className="text-sm text-muted-foreground">{AIO_EMPTY_HINT}</p>
+        ) : (
+          <div className="space-y-3">
+            <ul className="space-y-2 text-sm">
+              {data.by_category.map((c) => {
+                const pct = total > 0 ? (c.event_count / total) * 100 : 0;
+                return (
+                  <li key={c.outbound_category}>
+                    <div className="flex items-baseline justify-between">
+                      <span>
+                        {OUTBOUND_CATEGORY_LABEL[c.outbound_category] ?? c.outbound_category}
+                      </span>
+                      <span className="tabular-nums">
+                        {c.event_count} ({pct.toFixed(0)}%)
+                      </span>
+                    </div>
+                    <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full bg-sky-500/70"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            {data.top_domains.length > 0 && (
+              <div className="border-t border-border pt-2">
+                <div className="mb-1 text-xs text-muted-foreground">
+                  上位ドメイン TOP {data.top_domains.length}
+                </div>
+                <ul className="space-y-1 text-xs">
+                  {data.top_domains.map((d) => (
+                    <li
+                      key={`${d.link_domain}-${d.outbound_category}`}
+                      className="flex items-baseline justify-between gap-2"
+                    >
+                      <span className="truncate">
+                        <span className="text-muted-foreground mr-1">
+                          [{OUTBOUND_CATEGORY_LABEL[d.outbound_category] ?? d.outbound_category}]
+                        </span>
+                        {d.link_domain}
+                      </span>
+                      <span className="tabular-nums shrink-0">{d.event_count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LpPerformanceBlock({ days }: { days: number }) {
+  const { data, isPending } = useQuery({
+    queryKey: ['dashboard', 'lp-cta-clicks', days],
+    queryFn: () => fetchLpCtaClicks(days),
+  });
+  const byPositionTotal = (data?.by_position ?? []).reduce(
+    (s, p) => s + p.event_count,
+    0,
+  );
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="LP 別 CTA クリック / CVR"
+          help="lp_performance"
+          ds={['ga4_cta']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : !data || (data.by_lp.length === 0 && byPositionTotal === 0) ? (
+          <p className="text-sm text-muted-foreground">{AIO_EMPTY_HINT}</p>
+        ) : (
+          <div className="space-y-4">
+            {data.by_lp.length > 0 && (
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-muted-foreground">
+                  <tr>
+                    <th className="py-1">LP</th>
+                    <th className="py-1 text-right">セッション</th>
+                    <th className="py-1 text-right">CTA クリック</th>
+                    <th className="py-1 text-right">CTA CVR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.by_lp.map((r) => (
+                    <tr key={r.lp_id} className="border-t border-border">
+                      <td className="py-1 max-w-[14rem] truncate" title={r.lp_id}>
+                        {r.lp_id}
+                      </td>
+                      <td className="py-1 text-right tabular-nums">{r.lp_sessions}</td>
+                      <td className="py-1 text-right tabular-nums">{r.event_count}</td>
+                      <td className="py-1 text-right tabular-nums">
+                        {r.cvr !== null ? `${(r.cvr * 100).toFixed(1)}%` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {byPositionTotal > 0 && (
+              <div className="border-t border-border pt-2">
+                <div className="mb-1 text-xs text-muted-foreground">
+                  CTA 位置別(header / body)
+                </div>
+                <ul className="space-y-1 text-sm">
+                  {data.by_position.map((p) => {
+                    const pct =
+                      byPositionTotal > 0
+                        ? (p.event_count / byPositionTotal) * 100
+                        : 0;
+                    return (
+                      <li
+                        key={p.cta_id}
+                        className="flex items-baseline justify-between"
+                      >
+                        <span>{p.cta_id}</span>
+                        <span className="tabular-nums text-muted-foreground">
+                          {p.event_count} ({pct.toFixed(0)}%)
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
@@ -3355,6 +3686,20 @@ export default function DashboardPage() {
           <AiCrawlerPagesBlock days={days} />
           <LlmsTxtFetchBlock days={days} />
         </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">コンテンツ品質</h2>
+        <ArticleReadCompletionBlock days={days} />
+        <div className="grid gap-4 md:grid-cols-2">
+          <TextCopyBlock days={days} />
+          <OutboundClicksBlock days={days} />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">LP 別パフォーマンス</h2>
+        <LpPerformanceBlock days={days} />
       </section>
 
       <NextActionsBlock />

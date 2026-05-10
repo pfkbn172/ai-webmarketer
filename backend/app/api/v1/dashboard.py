@@ -940,6 +940,280 @@ async def contact_funnel(
     )
 
 
+# === コンテンツ品質(2026-05 追加: 完読率 / コピー / 外部リンク) ============
+
+
+class ArticleReadCompletionRow(BaseModel):
+    page_path: str
+    event_count: int
+    page_views: int
+    completion_rate: float | None  # event_count / page_views(分母 0 のとき null)
+
+
+@router.get("/article-read-completion", response_model=list[ArticleReadCompletionRow])
+async def article_read_completion(
+    days: int = 30,
+    limit: int = 20,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[ArticleReadCompletionRow]:
+    """ページ別 完読率(article_read_complete / page_view)。PV >= 10 で絞ってノイズ抑制。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    rows = (
+        await session.execute(
+            text(
+                "SELECT page_path, "
+                "       COALESCE(SUM(event_count), 0) AS reads, "
+                "       COALESCE(SUM(page_views), 0) AS pvs "
+                "FROM ga4_article_read_complete_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY page_path "
+                "HAVING COALESCE(SUM(page_views), 0) >= 10 "
+                "ORDER BY (CASE WHEN SUM(page_views) > 0 "
+                "               THEN SUM(event_count)::float / SUM(page_views) "
+                "               ELSE 0 END) DESC, reads DESC "
+                "LIMIT :limit"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end, "limit": limit},
+        )
+    ).all()
+    out: list[ArticleReadCompletionRow] = []
+    for r in rows:
+        reads = int(r.reads or 0)
+        pvs = int(r.pvs or 0)
+        out.append(
+            ArticleReadCompletionRow(
+                page_path=r.page_path,
+                event_count=reads,
+                page_views=pvs,
+                completion_rate=(reads / pvs) if pvs > 0 else None,
+            )
+        )
+    return out
+
+
+class TextCopyPageRow(BaseModel):
+    page_path: str
+    content_type: str
+    event_count: int
+
+
+class TextCopyOut(BaseModel):
+    by_content_type: dict[str, int]  # {"code": ..., "table": ..., "text": ...}
+    top_pages: list[TextCopyPageRow]
+
+
+@router.get("/text-copy", response_model=TextCopyOut)
+async def text_copy(
+    days: int = 30,
+    limit: int = 10,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> TextCopyOut:
+    """text_copy イベント: content_type 別合計 + ページ TOP N(content_type 別)。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    by_type_rows = (
+        await session.execute(
+            text(
+                "SELECT content_type, COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_text_copy_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY content_type"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    pages = (
+        await session.execute(
+            text(
+                "SELECT page_path, content_type, COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_text_copy_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY page_path, content_type "
+                "ORDER BY cnt DESC "
+                "LIMIT :limit"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end, "limit": limit},
+        )
+    ).all()
+    return TextCopyOut(
+        by_content_type={r.content_type: int(r.cnt or 0) for r in by_type_rows},
+        top_pages=[
+            TextCopyPageRow(
+                page_path=r.page_path,
+                content_type=r.content_type,
+                event_count=int(r.cnt or 0),
+            )
+            for r in pages
+        ],
+    )
+
+
+class OutboundCategoryRow(BaseModel):
+    outbound_category: str
+    event_count: int
+
+
+class OutboundDomainRow(BaseModel):
+    link_domain: str
+    outbound_category: str
+    event_count: int
+
+
+class OutboundClicksOut(BaseModel):
+    by_category: list[OutboundCategoryRow]
+    top_domains: list[OutboundDomainRow]
+
+
+@router.get("/outbound-clicks", response_model=OutboundClicksOut)
+async def outbound_clicks(
+    days: int = 30,
+    limit: int = 20,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> OutboundClicksOut:
+    """外部リンククリック: カテゴリ別合計 + 上位ドメイン。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    cat_rows = (
+        await session.execute(
+            text(
+                "SELECT outbound_category, COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_outbound_click_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY outbound_category "
+                "ORDER BY cnt DESC"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    domain_rows = (
+        await session.execute(
+            text(
+                "SELECT link_domain, outbound_category, "
+                "       COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_outbound_click_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY link_domain, outbound_category "
+                "ORDER BY cnt DESC "
+                "LIMIT :limit"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end, "limit": limit},
+        )
+    ).all()
+    return OutboundClicksOut(
+        by_category=[
+            OutboundCategoryRow(
+                outbound_category=r.outbound_category,
+                event_count=int(r.cnt or 0),
+            )
+            for r in cat_rows
+            if int(r.cnt or 0) > 0
+        ],
+        top_domains=[
+            OutboundDomainRow(
+                link_domain=r.link_domain,
+                outbound_category=r.outbound_category,
+                event_count=int(r.cnt or 0),
+            )
+            for r in domain_rows
+            if int(r.cnt or 0) > 0
+        ],
+    )
+
+
+# === LP 別パフォーマンス(2026-05 追加: cta_click) ==========================
+
+
+class LpCtaByLpRow(BaseModel):
+    lp_id: str
+    event_count: int
+    lp_sessions: int
+    cvr: float | None  # event_count / lp_sessions
+
+
+class LpCtaByPositionRow(BaseModel):
+    cta_id: str
+    event_count: int
+
+
+class LpCtaClicksOut(BaseModel):
+    by_lp: list[LpCtaByLpRow]
+    by_position: list[LpCtaByPositionRow]
+
+
+@router.get("/lp-cta-clicks", response_model=LpCtaClicksOut)
+async def lp_cta_clicks(
+    days: int = 30,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> LpCtaClicksOut:
+    """LP 別 CTA クリック数 + LP セッションからの CVR + ポジション(header/body)別。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    # LP 別: lp_sessions は同じ (date, lp_id) で重複するので MAX を取る(全 cta_id 行で同値)
+    by_lp = (
+        await session.execute(
+            text(
+                "WITH per_day AS ( "
+                "  SELECT date, lp_id, "
+                "         SUM(event_count) AS clicks, "
+                "         MAX(lp_sessions) AS lp_sessions "
+                "  FROM ga4_cta_click_daily "
+                "  WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "  GROUP BY date, lp_id "
+                ") "
+                "SELECT lp_id, "
+                "       COALESCE(SUM(clicks), 0) AS clicks, "
+                "       COALESCE(SUM(lp_sessions), 0) AS lp_sessions "
+                "FROM per_day "
+                "GROUP BY lp_id "
+                "ORDER BY clicks DESC"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    by_position = (
+        await session.execute(
+            text(
+                "SELECT cta_id, COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_cta_click_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY cta_id "
+                "ORDER BY cnt DESC"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    return LpCtaClicksOut(
+        by_lp=[
+            LpCtaByLpRow(
+                lp_id=r.lp_id,
+                event_count=int(r.clicks or 0),
+                lp_sessions=int(r.lp_sessions or 0),
+                cvr=(int(r.clicks or 0) / int(r.lp_sessions))
+                if int(r.lp_sessions or 0) > 0
+                else None,
+            )
+            for r in by_lp
+            if int(r.clicks or 0) > 0
+        ],
+        by_position=[
+            LpCtaByPositionRow(
+                cta_id=r.cta_id, event_count=int(r.cnt or 0)
+            )
+            for r in by_position
+            if int(r.cnt or 0) > 0
+        ],
+    )
+
+
 # === 記事/ページ単位のパフォーマンス ===
 
 # GA4 の pagePath(/blog/foo) と GSC の page(完全 URL)を URL の path 部分でつなぐ。
