@@ -13,12 +13,22 @@ from app.collectors.google_oauth import (
     load_google_credentials,
 )
 from app.db.models.enums import CredentialProviderEnum, JobStatusEnum
+from app.db.models.ga4_ai_crawler_daily import Ga4AiCrawlerDaily
+from app.db.models.ga4_ai_crawler_page_daily import Ga4AiCrawlerPageDaily
 from app.db.models.ga4_ai_referral_daily import Ga4AiReferralDaily
+from app.db.models.ga4_ai_referral_event_daily import Ga4AiReferralEventDaily
+from app.db.models.ga4_article_read_complete_daily import Ga4ArticleReadCompleteDaily
+from app.db.models.ga4_cta_click_daily import Ga4CtaClickDaily
 from app.db.models.ga4_daily_metric import Ga4DailyMetric
+from app.db.models.ga4_engagement_signal_daily import Ga4EngagementSignalDaily
 from app.db.models.ga4_hourly_metric import Ga4HourlyMetric
+from app.db.models.ga4_llms_txt_fetch_daily import Ga4LlmsTxtFetchDaily
+from app.db.models.ga4_outbound_click_daily import Ga4OutboundClickDaily
 from app.db.models.ga4_page_daily import Ga4PageDaily
 from app.db.models.ga4_referral_daily import Ga4ReferralDaily
 from app.db.models.ga4_referral_hourly import Ga4ReferralHourly
+from app.db.models.ga4_text_copy_daily import Ga4TextCopyDaily
+from app.db.models.ga4_tool_use_daily import Ga4ToolUseDaily
 from app.db.models.job_execution_log import JobExecutionLog
 from app.db.repositories.tenant_credential import TenantCredentialRepository
 from app.utils.logger import get_logger
@@ -66,6 +76,35 @@ async def run_for_tenant(
         await _upsert_referral_daily(session, tenant_id, ref_rows)
         await _upsert_referral_hourly(session, tenant_id, ref_hourly_rows)
 
+        # --- 2026-05 追加カスタムイベント -----------------------------------
+        # 各メソッドは独立に try/except する。ディメンション伝播未完で 1 メソッド
+        # が失敗しても、他のメトリクス収集は継続する。
+        custom_counts: dict[str, int] = {}
+        for key, fetcher, upserter in (
+            ("ai_referral_event", client.ai_referral_events, _upsert_ai_referral_events),
+            ("ai_crawler", client.ai_crawler_visits, _upsert_ai_crawler),
+            ("ai_crawler_page", client.ai_crawler_pages, _upsert_ai_crawler_page),
+            ("llms_txt_fetch", client.llms_txt_fetches, _upsert_llms_txt_fetch),
+            ("article_read", client.article_read_completes, _upsert_article_read),
+            ("text_copy", client.text_copy_events, _upsert_text_copy),
+            ("outbound_click", client.outbound_click_events, _upsert_outbound_click),
+            ("cta_click", client.cta_click_events, _upsert_cta_click),
+            ("tool_use", client.tool_use_events, _upsert_tool_use),
+            ("engagement_signal", client.engagement_signals, _upsert_engagement_signal),
+        ):
+            try:
+                rs = await fetcher(start, end)
+                await upserter(session, tenant_id, rs)
+                custom_counts[key] = len(rs)
+            except Exception as exc:
+                custom_counts[key] = -1
+                log.warning(
+                    "ga4_collect_custom_failed",
+                    tenant_id=str(tenant_id),
+                    event_key=key,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+
         job_log.status = JobStatusEnum.success
         job_log.finished_at = datetime.now(UTC)
         job_log.job_metadata = {
@@ -75,6 +114,7 @@ async def run_for_tenant(
             "hourly_rows": len(hourly_rows),
             "referral_rows": len(ref_rows),
             "referral_hourly_rows": len(ref_hourly_rows),
+            "custom_event_rows": custom_counts,
             "start": start.isoformat(),
             "end": end.isoformat(),
         }
@@ -277,5 +317,265 @@ async def _upsert_ai_referrals(
     stmt = stmt.on_conflict_do_update(
         constraint="uq_ga4_ai_ref_tenant_date_host",
         set_={"sessions": stmt.excluded.sessions},
+    )
+    await session.execute(stmt)
+
+
+# --- 2026-05 追加カスタムイベント用 _upsert ヘルパー ----------------------------
+
+# asyncpg bind 変数上限(32767)対策。高カーディナリティテーブル用。
+_CUSTOM_CHUNK = 5000
+
+
+async def _set_tenant_ctx(session: AsyncSession, tenant_id: uuid.UUID) -> None:
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tid, true)"),
+        {"tid": str(tenant_id)},
+    )
+
+
+async def _upsert_ai_referral_events(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await _set_tenant_ctx(session, tenant_id)
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "ai_referrer_domain": r.ai_referrer_domain,
+            "event_count": r.event_count,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4AiReferralEventDaily).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_ai_ref_evt_tenant_date_dom",
+        set_={"event_count": stmt.excluded.event_count},
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_ai_crawler(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await _set_tenant_ctx(session, tenant_id)
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "crawler_name": r.crawler_name,
+            "event_count": r.event_count,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4AiCrawlerDaily).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_ai_crawl_tenant_date_name",
+        set_={"event_count": stmt.excluded.event_count},
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_ai_crawler_page(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await _set_tenant_ctx(session, tenant_id)
+    for i in range(0, len(rows), _CUSTOM_CHUNK):
+        chunk = rows[i : i + _CUSTOM_CHUNK]
+        payload = [
+            {
+                "tenant_id": tenant_id,
+                "date": r.date,
+                "crawler_name": r.crawler_name,
+                "page_path": r.page_path,
+                "event_count": r.event_count,
+            }
+            for r in chunk
+        ]
+        stmt = pg_insert(Ga4AiCrawlerPageDaily).values(payload)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_ga4_ai_crawl_pg_tenant_date_name_path",
+            set_={"event_count": stmt.excluded.event_count},
+        )
+        await session.execute(stmt)
+
+
+async def _upsert_llms_txt_fetch(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await _set_tenant_ctx(session, tenant_id)
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "crawler_name": r.crawler_name,
+            "event_count": r.event_count,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4LlmsTxtFetchDaily).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_llms_tenant_date_name",
+        set_={"event_count": stmt.excluded.event_count},
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_article_read(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await _set_tenant_ctx(session, tenant_id)
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "page_path": r.page_path,
+            "event_count": r.event_count,
+            "page_views": r.page_views,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4ArticleReadCompleteDaily).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_arc_tenant_date_path",
+        set_={
+            "event_count": stmt.excluded.event_count,
+            "page_views": stmt.excluded.page_views,
+        },
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_text_copy(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await _set_tenant_ctx(session, tenant_id)
+    for i in range(0, len(rows), _CUSTOM_CHUNK):
+        chunk = rows[i : i + _CUSTOM_CHUNK]
+        payload = [
+            {
+                "tenant_id": tenant_id,
+                "date": r.date,
+                "page_path": r.page_path,
+                "content_type": r.content_type,
+                "event_count": r.event_count,
+            }
+            for r in chunk
+        ]
+        stmt = pg_insert(Ga4TextCopyDaily).values(payload)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_ga4_txc_tenant_date_path_type",
+            set_={"event_count": stmt.excluded.event_count},
+        )
+        await session.execute(stmt)
+
+
+async def _upsert_outbound_click(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await _set_tenant_ctx(session, tenant_id)
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "outbound_category": r.outbound_category,
+            "link_domain": r.link_domain,
+            "event_count": r.event_count,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4OutboundClickDaily).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_outb_tenant_date_cat_dom",
+        set_={"event_count": stmt.excluded.event_count},
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_cta_click(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await _set_tenant_ctx(session, tenant_id)
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "lp_id": r.lp_id,
+            "cta_id": r.cta_id,
+            "event_count": r.event_count,
+            "lp_sessions": r.lp_sessions,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4CtaClickDaily).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_cta_tenant_date_lp_cta",
+        set_={
+            "event_count": stmt.excluded.event_count,
+            "lp_sessions": stmt.excluded.lp_sessions,
+        },
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_tool_use(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await _set_tenant_ctx(session, tenant_id)
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "tool_name": r.tool_name,
+            "event_count": r.event_count,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4ToolUseDaily).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_tool_tenant_date_name",
+        set_={"event_count": stmt.excluded.event_count},
+    )
+    await session.execute(stmt)
+
+
+async def _upsert_engagement_signal(
+    session: AsyncSession, tenant_id: uuid.UUID, rows: list
+) -> None:
+    if not rows:
+        return
+    await _set_tenant_ctx(session, tenant_id)
+    payload = [
+        {
+            "tenant_id": tenant_id,
+            "date": r.date,
+            "event_name": r.event_name,
+            "sub_key": r.sub_key,
+            "event_count": r.event_count,
+        }
+        for r in rows
+    ]
+    stmt = pg_insert(Ga4EngagementSignalDaily).values(payload)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_ga4_engsig_tenant_date_evt_sub",
+        set_={"event_count": stmt.excluded.event_count},
     )
     await session.execute(stmt)
