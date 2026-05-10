@@ -236,3 +236,45 @@ Marketer アプリでこれらを直接読み込む必要は **ありません**
 ---
 
 **この引き継ぎ文書はここまでです。本ドキュメントだけで作業を完結できる構成にしています。不明点があればドキュメント本文の該当セクションを参照してから、それでも判断できない場合のみユーザー(Tsuyoshi Kise)に確認してください。**
+
+---
+
+## 実装記録 (Marketer 側)
+
+**実装完了**: 2026-05-11 / ブランチ: `feat/ga4-events-2026-05`
+
+### 反映先
+- **集客タブ(DashboardPage の overview)** に新規セクションを追加:
+  - コンタクトファネル(`/contact/` PV → confirm_view → contact_complete)
+  - AIO 効果(2 列): AI 流入(イベント)/ AI クローラー訪問数 / 人気ページ TOP10 / llms.txt 取得
+  - コンテンツ品質: 完読率テーブル / コピー(content_type 別)/ 外部リンクカテゴリ
+  - LP 別パフォーマンス: lp_id 別 CVR + cta_id(header / body)別
+  - ツール利用 / 追加エンゲージメント: ツール完走数(実装ステータス自動判定)+ 4 KPI タイル
+
+### 追加テーブル / マイグレーション
+- 10 テーブル(`ga4_ai_referral_event_daily` 〜 `ga4_engagement_signal_daily`)
+- Alembic 3 マイグレーション(AIO / Content+LP / Engagement)、いずれも RLS + tenant_isolation ポリシー有効
+- `data_sources` レジストリにも 10 ソースキーを追加済み
+
+### バックフィル
+- `backend/scripts/backfill_ga4_custom_events.py` を新設
+- 実行例: `cd backend && .venv/bin/python -m scripts.backfill_ga4_custom_events --tenant-id <UUID> --start 2026-05-10`
+- メソッド単位で try/except、`--only <key>` で個別実行可能
+
+### キーイベント切替
+- 本プロパティのキーイベントは `contact_complete` のみのため、GA4 builtin の `Metric(name="conversions")` がそのまま contact_complete 件数を返す → backend のメトリクス取得コードは変更不要、HELP 文言のみ調整。
+- `purchase` を参照する箇所は元々存在しないため削除不要。
+
+### デプロイ手順(ユーザー実行)
+1. `git push origin feat/ga4-events-2026-05`
+2. main にマージ後、本番 VPS で:
+   - `cd /var/www/ai-web-marketer/backend && .venv/bin/alembic upgrade head`
+   - `sudo pm2 reload marketer-api`(無停止リロード)
+   - `cd /var/www/ai-web-marketer/frontend && npm run build` → 静的配信側を更新
+3. ディメンション伝播から ≥24 時間経過後、上記バックフィルスクリプトを実行して既存データを取り込み
+4. ダッシュボード「集客」タブで各セクションが空状態 → 実データに変わることを確認
+
+### 既知の制約
+- ディメンション伝播待ち中(24〜48 時間)は各ブロックが「GA4 のディメンション登録から…」というガイダンス文を表示する空状態。これは仕様。
+- `ToolUsageBlock` は `total==0` の場合に WP 側未実装バナーを表示。ツール記事に `data-tool-complete` 属性を付与すれば自動的に通常表示へ切替。
+- `ga4_ai_crawler_page_daily` はカーディナリティ膨張対策として収集側で `limit=1000`/日 に制限している(必要なら `client.ai_crawler_pages` の `top_n` を引き上げる)。
