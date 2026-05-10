@@ -29,12 +29,22 @@ from app.db.models.enums import (
     LLMProviderEnum,
     UserRoleEnum,
 )
+from app.db.models.ga4_ai_crawler_daily import Ga4AiCrawlerDaily
+from app.db.models.ga4_ai_crawler_page_daily import Ga4AiCrawlerPageDaily
 from app.db.models.ga4_ai_referral_daily import Ga4AiReferralDaily
+from app.db.models.ga4_ai_referral_event_daily import Ga4AiReferralEventDaily
+from app.db.models.ga4_article_read_complete_daily import Ga4ArticleReadCompleteDaily
+from app.db.models.ga4_cta_click_daily import Ga4CtaClickDaily
 from app.db.models.ga4_daily_metric import Ga4DailyMetric
+from app.db.models.ga4_engagement_signal_daily import Ga4EngagementSignalDaily
 from app.db.models.ga4_hourly_metric import Ga4HourlyMetric
+from app.db.models.ga4_llms_txt_fetch_daily import Ga4LlmsTxtFetchDaily
+from app.db.models.ga4_outbound_click_daily import Ga4OutboundClickDaily
 from app.db.models.ga4_page_daily import Ga4PageDaily
 from app.db.models.ga4_referral_daily import Ga4ReferralDaily
 from app.db.models.ga4_referral_hourly import Ga4ReferralHourly
+from app.db.models.ga4_text_copy_daily import Ga4TextCopyDaily
+from app.db.models.ga4_tool_use_daily import Ga4ToolUseDaily
 from app.db.models.gsc_page_metric import GscPageMetric
 from app.db.models.gsc_query_metric import GscQueryMetric
 from app.db.models.inquiry import Inquiry
@@ -68,12 +78,22 @@ __all__ = [
     "ContentBrief",
     "ContentMetric",
     "DailyAction",
+    "Ga4AiCrawlerDaily",
+    "Ga4AiCrawlerPageDaily",
     "Ga4AiReferralDaily",
+    "Ga4AiReferralEventDaily",
+    "Ga4ArticleReadCompleteDaily",
+    "Ga4CtaClickDaily",
     "Ga4DailyMetric",
+    "Ga4EngagementSignalDaily",
     "Ga4HourlyMetric",
+    "Ga4LlmsTxtFetchDaily",
+    "Ga4OutboundClickDaily",
     "Ga4PageDaily",
     "Ga4ReferralDaily",
     "Ga4ReferralHourly",
+    "Ga4TextCopyDaily",
+    "Ga4ToolUseDaily",
     "GscPageMetric",
     "GscQueryMetric",
     "ContentStatusEnum",
