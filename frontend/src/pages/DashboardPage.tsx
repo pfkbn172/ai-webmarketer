@@ -135,8 +135,8 @@ const HELP: Record<string, { title: string; what: string; watch: string }> = {
   },
   kpi_inquiries: {
     title: '問い合わせ数',
-    what: 'inquiries テーブルに登録された期間内の問い合わせ件数(Web / Email / 電話 / AI 経由)。',
-    watch: '増加が伸びていない場合は CVR を確認。CVR が下がっている=訴求やフォームの摩擦の問題。',
+    what: 'inquiries テーブルに登録された期間内の問い合わせ件数(Web / Email / 電話 / AI 経由)。GA4 上は contact_complete(キーイベント)が conversions として取得される。',
+    watch: '増加が伸びていない場合は CVR を確認。CVR が下がっている=訴求やフォームの摩擦の問題。下のコンタクトファネルでステップ別離脱を見ると改善ポイントが特定できる。',
   },
   kpi_cvr: {
     title: 'リード CVR',
