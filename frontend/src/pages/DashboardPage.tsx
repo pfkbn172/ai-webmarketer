@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -27,8 +28,12 @@ import {
 } from 'recharts';
 
 import {
+  fetchAiCrawlerPages,
+  fetchAiCrawlerVisits,
+  fetchAiReferralEvents,
   fetchAiReferrals,
   fetchAlertRules,
+  fetchContactFunnel,
   fetchDataSources,
   fetchAreaPerformance,
   fetchBrandSearch,
@@ -42,6 +47,7 @@ import {
   fetchHeatmap,
   fetchHourWeekdayHeatmap,
   fetchKeywordOpportunity,
+  fetchLlmsTxtFetches,
   fetchNextActions,
   fetchObjectives,
   fetchPagePerformance,
@@ -276,6 +282,31 @@ const HELP: Record<string, { title: string; what: string; watch: string }> = {
     title: '月次目標と進捗',
     what: '当月の目標値(セッション / AI 引用 / 問い合わせ / 公開記事)に対する進捗率。',
     watch: '月の中盤までで 50% を超えていない指標は要対策。下の「目標を編集」で目標自体を見直す。',
+  },
+  aio_ai_referral: {
+    title: 'AI 流入(イベント計測)',
+    what: 'GA4 で本体の analytics.js が送る ai_referral イベントを ai_referrer_domain 別に集計。AI チャットの参照元 URL ホスト単位で見える。',
+    watch: '上の「AI 経由の流入」(セッションベース)と併読。イベント数が多いのにセッションが少なければ複数 PV/セッション。差分が大きい LLM の挙動変化を疑う。',
+  },
+  aio_ai_crawler: {
+    title: 'AI クローラー訪問',
+    what: 'サーバー側で User-Agent 判定したクローラー(GPTBot / ClaudeBot / PerplexityBot / Google-Extended / OAI-SearchBot / Amazonbot / CCBot / Bytespider 等)による訪問数。',
+    watch: '増加傾向 = 学習素材 / 検索インデックスとして拾われている。0 のまま → robots.txt や WAF で弾いていないか確認。',
+  },
+  aio_ai_crawler_pages: {
+    title: 'AI クローラー人気ページ',
+    what: 'AI クローラーが期間中にもっとも多く訪問したページの上位。',
+    watch: '上位ページ = LLM が「答えに使う」可能性が高いページ。ここに自社の主力 LP / 営業上重要な記事が入っていることを確認。',
+  },
+  aio_llms_txt: {
+    title: 'llms.txt 取得回数',
+    what: '/llms.txt(LLM 向けインデックスファイル)が AI クローラーに取得された回数。',
+    watch: '主要 AI クローラー(GPTBot / ClaudeBot / PerplexityBot)からのフェッチが定期的にあるかを確認。0 が続く → llms.txt の認知が広がっていない可能性。',
+  },
+  contact_funnel: {
+    title: 'コンタクトファネル',
+    what: '/contact/ ページ訪問 → 確認画面到達 → 完了(GA4 キーイベント contact_complete)の 3 ステップで離脱率を可視化。',
+    watch: '離脱が大きいステップが改善ポイント。確認画面 → 完了で大きく落ちている場合はフォーム入力負荷や送信ボタン位置を見直す。',
   },
 };
 
@@ -830,6 +861,306 @@ function AiReferralsBlock({ days }: { days: number }) {
                       style={{ width: `${pct}%` }}
                     />
                   </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// === 2026-05 追加: AIO 効果セクション =====================================
+//
+// 本体側 GA4 で 12 種の新規カスタムイベントを計測開始(2026-05-10)。
+// ここではうち AIO 直接効果 4 ブロックを描画する。
+// 24〜48 時間のディメンション伝播待ちのため、空配列が正常系。
+
+const AIO_EMPTY_HINT =
+  'GA4 のディメンション登録から 24〜48 時間経過すると表示されます(登録日: 2026-05-10)。';
+
+const _CRAWLER_PALETTE = [
+  'hsl(var(--primary))',
+  '#10b981',
+  '#f59e0b',
+  '#ef4444',
+  '#8b5cf6',
+];
+
+function AiReferralByDomainBlock({ days }: { days: number }) {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'ai-referral-events', days],
+    queryFn: () => fetchAiReferralEvents(days),
+  });
+  const total = data.reduce((s, d) => s + d.event_count, 0);
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="AI 流入(イベント計測)"
+          help="aio_ai_referral"
+          ds={['ga4_ai_referral_event']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{AIO_EMPTY_HINT}</p>
+        ) : (
+          <ul className="space-y-2">
+            {data.map((d) => {
+              const pct = total > 0 ? (d.event_count / total) * 100 : 0;
+              return (
+                <li key={d.ai_referrer_domain}>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="truncate">{d.ai_referrer_domain}</span>
+                    <span className="tabular-nums">
+                      {d.event_count} ({pct.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full bg-emerald-500/70"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AiCrawlerVisitsBlock({ days }: { days: number }) {
+  const { data, isPending } = useQuery({
+    queryKey: ['dashboard', 'ai-crawler-visits', days],
+    queryFn: () => fetchAiCrawlerVisits(days),
+  });
+
+  // 折れ線用に series を date 軸でピボット(crawler_name TOP5 + その他にまとめる)。
+  const topNames =
+    (data?.by_crawler ?? []).slice(0, 5).map((b) => b.crawler_name) ?? [];
+  const pivot: Record<string, Record<string, number | string>> = {};
+  for (const p of data?.series ?? []) {
+    const bucket = (pivot[p.date] ??= { date: p.date });
+    const key = topNames.includes(p.crawler_name) ? p.crawler_name : 'その他';
+    bucket[key] = (Number(bucket[key] ?? 0) || 0) + p.event_count;
+  }
+  const chartData = Object.values(pivot).sort((a, b) =>
+    String(a.date).localeCompare(String(b.date)),
+  );
+  const seriesKeys = [
+    ...topNames,
+    ...((data?.by_crawler ?? []).length > 5 ? ['その他'] : []),
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="AI クローラー訪問数"
+          help="aio_ai_crawler"
+          ds={['ga4_ai_crawler']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : !data || data.total === 0 ? (
+          <p className="text-sm text-muted-foreground">{AIO_EMPTY_HINT}</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-semibold tabular-nums">{data.total}</span>
+              <span className="text-xs text-muted-foreground">
+                合計訪問数(過去 {days} 日)
+              </span>
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="date"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={11}
+                />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: '11px' }} />
+                {seriesKeys.map((k, i) => (
+                  <Line
+                    key={k}
+                    type="monotone"
+                    dataKey={k}
+                    stroke={_CRAWLER_PALETTE[i % _CRAWLER_PALETTE.length]}
+                    dot={false}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AiCrawlerPagesBlock({ days }: { days: number }) {
+  const { data = [], isPending } = useQuery({
+    queryKey: ['dashboard', 'ai-crawler-pages', days, 10],
+    queryFn: () => fetchAiCrawlerPages(days, 10),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="AI クローラー人気ページ TOP10"
+          help="aio_ai_crawler_pages"
+          ds={['ga4_ai_crawler_page']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{AIO_EMPTY_HINT}</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground">
+              <tr>
+                <th className="py-1">ページ</th>
+                <th className="py-1">主クローラー</th>
+                <th className="py-1 text-right">訪問数</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((r) => (
+                <tr key={r.page_path} className="border-t border-border">
+                  <td className="py-1 max-w-[18rem] truncate" title={r.page_path}>
+                    {r.page_path}
+                  </td>
+                  <td className="py-1 text-xs text-muted-foreground">
+                    {r.top_crawler}
+                  </td>
+                  <td className="py-1 text-right tabular-nums">{r.event_count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LlmsTxtFetchBlock({ days }: { days: number }) {
+  const { data, isPending } = useQuery({
+    queryKey: ['dashboard', 'llms-txt-fetches', days],
+    queryFn: () => fetchLlmsTxtFetches(days),
+  });
+  const total = data?.total ?? 0;
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="llms.txt 取得回数"
+          help="aio_llms_txt"
+          ds={['ga4_llms_txt']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : !data || total === 0 ? (
+          <p className="text-sm text-muted-foreground">{AIO_EMPTY_HINT}</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-semibold tabular-nums">{total}</span>
+              <span className="text-xs text-muted-foreground">
+                取得数(過去 {days} 日)
+              </span>
+            </div>
+            <ul className="space-y-1 text-sm">
+              {data.by_crawler.map((b) => {
+                const pct = total > 0 ? (b.event_count / total) * 100 : 0;
+                return (
+                  <li
+                    key={b.crawler_name}
+                    className="flex items-baseline justify-between"
+                  >
+                    <span className="truncate">{b.crawler_name}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {b.event_count} ({pct.toFixed(0)}%)
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ContactFunnelBlock({ days }: { days: number }) {
+  const { data, isPending } = useQuery({
+    queryKey: ['dashboard', 'contact-funnel', days],
+    queryFn: () => fetchContactFunnel(days),
+  });
+  const steps = data?.steps ?? [];
+  const max = steps.reduce((m, s) => Math.max(m, s.count), 0);
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="コンタクトファネル"
+          help="contact_funnel"
+          ds={['ga4_page', 'ga4_engagement', 'ga4_daily']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : steps.length === 0 ? (
+          <p className="text-sm text-muted-foreground">データがありません。</p>
+        ) : (
+          <ul className="space-y-3">
+            {steps.map((s, i) => {
+              const widthPct = max > 0 ? (s.count / max) * 100 : 0;
+              const dropPct =
+                s.drop_off_pct !== null ? (s.drop_off_pct * 100).toFixed(1) : null;
+              return (
+                <li key={s.key}>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span>
+                      <span className="text-xs text-muted-foreground mr-1">
+                        Step {i + 1}
+                      </span>
+                      {s.label}
+                    </span>
+                    <span className="tabular-nums font-medium">{s.count}</span>
+                  </div>
+                  <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full"
+                      style={{
+                        width: `${widthPct}%`,
+                        backgroundColor: `hsl(var(--primary) / ${1 - i * 0.25})`,
+                      }}
+                    />
+                  </div>
+                  {dropPct !== null && (
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      前ステップからの離脱: {dropPct}%
+                    </div>
+                  )}
                 </li>
               );
             })}
@@ -3012,6 +3343,19 @@ export default function DashboardPage() {
       <BrandSearchBlock />
       <HourWeekdayHeatmapBlock days={days} />
       <SeasonalityBlock days={days} />
+
+      {/* 2026-05 追加: コンタクトファネル + AIO 効果セクション */}
+      <ContactFunnelBlock days={days} />
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">AIO 効果(AI 検索引用最適化)</h2>
+        <div className="grid gap-4 md:grid-cols-2">
+          <AiReferralByDomainBlock days={days} />
+          <AiCrawlerVisitsBlock days={days} />
+          <AiCrawlerPagesBlock days={days} />
+          <LlmsTxtFetchBlock days={days} />
+        </div>
+      </section>
 
       <NextActionsBlock />
     </div>

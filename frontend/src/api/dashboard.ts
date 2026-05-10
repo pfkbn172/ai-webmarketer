@@ -383,3 +383,99 @@ export async function fetchDataSources(): Promise<Record<string, DataSourceInfo>
     await apiClient.get<Record<string, DataSourceInfo>>('/dashboard/data-sources')
   ).data;
 }
+
+// === 2026-05 追加: GA4 カスタムイベント関連 ============================
+//
+// 本体側 analytics.js が送るイベント(ai_referral / ai_crawler_visit /
+// llms_txt_fetch / contact_confirm_view + conversions)をブレイクダウン
+// して可視化する。GA4 ディメンション登録から 24〜48 時間で伝播するため、
+// それまでは空配列が正常系。
+
+export type AiReferralEventRow = {
+  ai_referrer_domain: string;
+  event_count: number;
+};
+
+export async function fetchAiReferralEvents(
+  days = 30,
+  limit = 20,
+): Promise<AiReferralEventRow[]> {
+  return (
+    await apiClient.get<AiReferralEventRow[]>('/dashboard/ai-referral-events', {
+      params: { days, limit },
+    })
+  ).data;
+}
+
+export type AiCrawlerByName = { crawler_name: string; event_count: number };
+export type AiCrawlerSeriesPoint = {
+  date: string;
+  crawler_name: string;
+  event_count: number;
+};
+export type AiCrawlerVisitsOut = {
+  total: number;
+  by_crawler: AiCrawlerByName[];
+  series: AiCrawlerSeriesPoint[];
+};
+
+export async function fetchAiCrawlerVisits(days = 30): Promise<AiCrawlerVisitsOut> {
+  return (
+    await apiClient.get<AiCrawlerVisitsOut>('/dashboard/ai-crawler-visits', {
+      params: { days },
+    })
+  ).data;
+}
+
+export type AiCrawlerPageRow = {
+  page_path: string;
+  event_count: number;
+  top_crawler: string;
+};
+
+export async function fetchAiCrawlerPages(
+  days = 30,
+  limit = 10,
+): Promise<AiCrawlerPageRow[]> {
+  return (
+    await apiClient.get<AiCrawlerPageRow[]>('/dashboard/ai-crawler-pages', {
+      params: { days, limit },
+    })
+  ).data;
+}
+
+export type LlmsTxtFetchByCrawler = { crawler_name: string; event_count: number };
+export type LlmsTxtFetchSeriesPoint = { date: string; total: number };
+export type LlmsTxtFetchOut = {
+  total: number;
+  by_crawler: LlmsTxtFetchByCrawler[];
+  series: LlmsTxtFetchSeriesPoint[];
+};
+
+export async function fetchLlmsTxtFetches(days = 30): Promise<LlmsTxtFetchOut> {
+  return (
+    await apiClient.get<LlmsTxtFetchOut>('/dashboard/llms-txt-fetches', {
+      params: { days },
+    })
+  ).data;
+}
+
+export type ContactFunnelStep = {
+  label: string;
+  key: string;
+  count: number;
+  drop_off_pct: number | null;
+};
+
+export type ContactFunnel = {
+  period_days: number;
+  steps: ContactFunnelStep[];
+};
+
+export async function fetchContactFunnel(days = 30): Promise<ContactFunnel> {
+  return (
+    await apiClient.get<ContactFunnel>('/dashboard/contact-funnel', {
+      params: { days },
+    })
+  ).data;
+}
