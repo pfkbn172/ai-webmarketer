@@ -598,6 +598,348 @@ async def ai_referrals(
     return out
 
 
+# === AIO 効果(2026-05 追加カスタムイベント由来) ============================
+
+# 本体側の analytics.js が送る `ai_referral` / `ai_crawler_visit` /
+# `llms_txt_fetch` イベントを、customEvent: ディメンションでブレイクダウン
+# して見せるためのエンドポイント群。GA4 ディメンション登録から 24〜48 時間
+# 経過しないとデータが伝播しないため、空配列を返すケースが正常系。
+
+
+class AiReferralEventRow(BaseModel):
+    ai_referrer_domain: str
+    event_count: int
+
+
+@router.get("/ai-referral-events", response_model=list[AiReferralEventRow])
+async def ai_referral_events(
+    days: int = 30,
+    limit: int = 20,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[AiReferralEventRow]:
+    """ai_referral イベント × ai_referrer_domain の集計(TOP N)。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    rows = (
+        await session.execute(
+            text(
+                "SELECT ai_referrer_domain, COALESCE(SUM(event_count), 0) AS event_count "
+                "FROM ga4_ai_referral_event_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY ai_referrer_domain "
+                "ORDER BY event_count DESC "
+                "LIMIT :limit"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end, "limit": limit},
+        )
+    ).all()
+    return [
+        AiReferralEventRow(
+            ai_referrer_domain=r.ai_referrer_domain,
+            event_count=int(r.event_count or 0),
+        )
+        for r in rows
+        if int(r.event_count or 0) > 0
+    ]
+
+
+class AiCrawlerByName(BaseModel):
+    crawler_name: str
+    event_count: int
+
+
+class AiCrawlerSeriesPoint(BaseModel):
+    date: date
+    crawler_name: str
+    event_count: int
+
+
+class AiCrawlerVisitsOut(BaseModel):
+    total: int
+    by_crawler: list[AiCrawlerByName]
+    series: list[AiCrawlerSeriesPoint]
+
+
+@router.get("/ai-crawler-visits", response_model=AiCrawlerVisitsOut)
+async def ai_crawler_visits(
+    days: int = 30,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> AiCrawlerVisitsOut:
+    """ai_crawler_visit イベントの集計 + 折れ線用日別データ。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    by_crawler_rows = (
+        await session.execute(
+            text(
+                "SELECT crawler_name, COALESCE(SUM(event_count), 0) AS event_count "
+                "FROM ga4_ai_crawler_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY crawler_name "
+                "ORDER BY event_count DESC"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    series_rows = (
+        await session.execute(
+            text(
+                "SELECT date, crawler_name, COALESCE(SUM(event_count), 0) AS event_count "
+                "FROM ga4_ai_crawler_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY date, crawler_name "
+                "ORDER BY date ASC"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    by_crawler = [
+        AiCrawlerByName(
+            crawler_name=r.crawler_name, event_count=int(r.event_count or 0)
+        )
+        for r in by_crawler_rows
+        if int(r.event_count or 0) > 0
+    ]
+    return AiCrawlerVisitsOut(
+        total=sum(b.event_count for b in by_crawler),
+        by_crawler=by_crawler,
+        series=[
+            AiCrawlerSeriesPoint(
+                date=r.date,
+                crawler_name=r.crawler_name,
+                event_count=int(r.event_count or 0),
+            )
+            for r in series_rows
+            if int(r.event_count or 0) > 0
+        ],
+    )
+
+
+class AiCrawlerPageRow(BaseModel):
+    page_path: str
+    event_count: int
+    top_crawler: str
+
+
+@router.get("/ai-crawler-pages", response_model=list[AiCrawlerPageRow])
+async def ai_crawler_pages(
+    days: int = 30,
+    limit: int = 10,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[AiCrawlerPageRow]:
+    """AI クローラーがアクセスした人気ページ TOP N(主クローラーつき)。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    rows = (
+        await session.execute(
+            text(
+                "WITH agg AS ( "
+                "  SELECT page_path, crawler_name, "
+                "         COALESCE(SUM(event_count), 0) AS cnt "
+                "  FROM ga4_ai_crawler_page_daily "
+                "  WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "  GROUP BY page_path, crawler_name "
+                "), "
+                "ranked AS ( "
+                "  SELECT page_path, crawler_name, cnt, "
+                "         ROW_NUMBER() OVER ( "
+                "             PARTITION BY page_path ORDER BY cnt DESC "
+                "         ) AS rn "
+                "  FROM agg "
+                ") "
+                "SELECT page_path, "
+                "       MAX(CASE WHEN rn = 1 THEN crawler_name END) AS top_crawler, "
+                "       SUM(cnt) AS total "
+                "FROM ranked "
+                "GROUP BY page_path "
+                "ORDER BY total DESC "
+                "LIMIT :limit"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end, "limit": limit},
+        )
+    ).all()
+    return [
+        AiCrawlerPageRow(
+            page_path=r.page_path,
+            event_count=int(r.total or 0),
+            top_crawler=r.top_crawler or "",
+        )
+        for r in rows
+        if int(r.total or 0) > 0
+    ]
+
+
+class LlmsTxtFetchByCrawler(BaseModel):
+    crawler_name: str
+    event_count: int
+
+
+class LlmsTxtFetchSeriesPoint(BaseModel):
+    date: date
+    total: int
+
+
+class LlmsTxtFetchOut(BaseModel):
+    total: int
+    by_crawler: list[LlmsTxtFetchByCrawler]
+    series: list[LlmsTxtFetchSeriesPoint]
+
+
+@router.get("/llms-txt-fetches", response_model=LlmsTxtFetchOut)
+async def llms_txt_fetches(
+    days: int = 30,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> LlmsTxtFetchOut:
+    """llms.txt の取得回数(クローラー別 + 日次トレンド)。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    by_crawler_rows = (
+        await session.execute(
+            text(
+                "SELECT crawler_name, COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_llms_txt_fetch_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY crawler_name "
+                "ORDER BY cnt DESC"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    series_rows = (
+        await session.execute(
+            text(
+                "SELECT date, COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_llms_txt_fetch_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY date "
+                "ORDER BY date ASC"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    by_crawler = [
+        LlmsTxtFetchByCrawler(crawler_name=r.crawler_name, event_count=int(r.cnt or 0))
+        for r in by_crawler_rows
+        if int(r.cnt or 0) > 0
+    ]
+    return LlmsTxtFetchOut(
+        total=sum(b.event_count for b in by_crawler),
+        by_crawler=by_crawler,
+        series=[
+            LlmsTxtFetchSeriesPoint(date=r.date, total=int(r.cnt or 0))
+            for r in series_rows
+            if int(r.cnt or 0) > 0
+        ],
+    )
+
+
+# === コンタクトファネル(2026-05 追加: contact_complete をキーイベント想定) ===
+
+
+class ContactFunnelStep(BaseModel):
+    label: str
+    key: str
+    count: int
+    drop_off_pct: float | None  # 前ステップからの離脱率(0〜1)。step1 は null。
+
+
+class ContactFunnelOut(BaseModel):
+    period_days: int
+    steps: list[ContactFunnelStep]
+
+
+@router.get("/contact-funnel", response_model=ContactFunnelOut)
+async def contact_funnel(
+    days: int = 30,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> ContactFunnelOut:
+    """`/contact/` 訪問 → confirm_view → conversions(contact_complete)の 3 ステップファネル。
+
+    本プロパティではキーイベント = `contact_complete` のため、
+    GA4 builtin `conversions` メトリクスがそのまま contact_complete 件数となる。
+    """
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    # Step 1: /contact/ ページ訪問(ga4_page_daily.sessions 集計)
+    s1 = (
+        await session.execute(
+            text(
+                "SELECT COALESCE(SUM(sessions), 0) AS cnt "
+                "FROM ga4_page_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "AND page_path = '/contact/'"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).scalar_one()
+
+    # Step 2: contact_confirm_view イベント
+    s2 = (
+        await session.execute(
+            text(
+                "SELECT COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_engagement_signal_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "AND event_name = 'contact_confirm_view'"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).scalar_one()
+
+    # Step 3: conversions(== contact_complete on this property)
+    s3 = (
+        await session.execute(
+            text(
+                "SELECT COALESCE(SUM(conversions), 0) AS cnt "
+                "FROM ga4_daily_metrics "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).scalar_one()
+
+    s1, s2, s3 = int(s1 or 0), int(s2 or 0), int(s3 or 0)
+
+    def _drop(prev: int, cur: int) -> float | None:
+        if prev <= 0:
+            return None
+        return max(0.0, min(1.0, (prev - cur) / prev))
+
+    return ContactFunnelOut(
+        period_days=days,
+        steps=[
+            ContactFunnelStep(
+                label="お問い合わせページ訪問",
+                key="contact_page_view",
+                count=s1,
+                drop_off_pct=None,
+            ),
+            ContactFunnelStep(
+                label="確認画面到達",
+                key="contact_confirm_view",
+                count=s2,
+                drop_off_pct=_drop(s1, s2),
+            ),
+            ContactFunnelStep(
+                label="送信完了 (contact_complete)",
+                key="contact_complete",
+                count=s3,
+                drop_off_pct=_drop(s2, s3),
+            ),
+        ],
+    )
+
+
 # === 記事/ページ単位のパフォーマンス ===
 
 # GA4 の pagePath(/blog/foo) と GSC の page(完全 URL)を URL の path 部分でつなぐ。
@@ -2113,6 +2455,86 @@ async def data_sources(
             "GA4 AI 流入",
             "GA4",
             "ga4_ai_referral_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_ai_referral_event",
+            "GA4 AI 流入(イベント)",
+            "GA4",
+            "ga4_ai_referral_event_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_ai_crawler",
+            "GA4 AI クローラー",
+            "GA4",
+            "ga4_ai_crawler_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_ai_crawler_page",
+            "GA4 AI クローラー(ページ別)",
+            "GA4",
+            "ga4_ai_crawler_page_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_llms_txt",
+            "GA4 llms.txt 取得",
+            "GA4",
+            "ga4_llms_txt_fetch_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_article_read",
+            "GA4 完読",
+            "GA4",
+            "ga4_article_read_complete_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_text_copy",
+            "GA4 本文コピー",
+            "GA4",
+            "ga4_text_copy_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_outbound",
+            "GA4 外部リンク",
+            "GA4",
+            "ga4_outbound_click_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_cta",
+            "GA4 CTA クリック",
+            "GA4",
+            "ga4_cta_click_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_tool_use",
+            "GA4 ツール利用",
+            "GA4",
+            "ga4_tool_use_daily",
+            "date",
+            "collect_ga4",
+        ),
+        (
+            "ga4_engagement",
+            "GA4 エンゲージ補助",
+            "GA4",
+            "ga4_engagement_signal_daily",
             "date",
             "collect_ga4",
         ),
