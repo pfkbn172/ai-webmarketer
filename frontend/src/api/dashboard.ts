@@ -574,3 +574,45 @@ export async function fetchLpCtaClicks(days = 30): Promise<LpCtaClicksOut> {
     })
   ).data;
 }
+
+// === 2026-05 追加: ツール利用 + サブ指標 ============================
+
+export type ToolUseRow = { tool_name: string; event_count: number };
+
+export type ToolUsageOut = {
+  total: number;
+  by_tool: ToolUseRow[];
+  implementation_status: 'pending' | 'active';
+};
+
+export async function fetchToolUsage(days = 30): Promise<ToolUsageOut> {
+  return (
+    await apiClient.get<ToolUsageOut>('/dashboard/tool-usage', {
+      params: { days },
+    })
+  ).data;
+}
+
+export type EngagementShareByMethod = {
+  share_method: string;
+  count: number;
+};
+
+export type EngagementExtrasOut = {
+  returning_engaged: number;
+  share_total: number;
+  share_by_method: EngagementShareByMethod[];
+  internal_link_clicks: number;
+  internal_link_ctr: number | null;
+  text_copy_total: number;
+};
+
+export async function fetchEngagementExtras(
+  days = 30,
+): Promise<EngagementExtrasOut> {
+  return (
+    await apiClient.get<EngagementExtrasOut>('/dashboard/engagement-extras', {
+      params: { days },
+    })
+  ).data;
+}

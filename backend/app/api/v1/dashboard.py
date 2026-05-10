@@ -1214,6 +1214,157 @@ async def lp_cta_clicks(
     )
 
 
+# === ツール利用 + 追加エンゲージメント(2026-05 追加) ====================
+
+
+class ToolUseRow(BaseModel):
+    tool_name: str
+    event_count: int
+
+
+class ToolUsageOut(BaseModel):
+    total: int
+    by_tool: list[ToolUseRow]
+    implementation_status: str  # 'pending' or 'active'
+
+
+@router.get("/tool-usage", response_model=ToolUsageOut)
+async def tool_usage(
+    days: int = 30,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> ToolUsageOut:
+    """tool_use_complete イベント集計。total==0 → WP 側の data 属性が未設定と判断。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+    rows = (
+        await session.execute(
+            text(
+                "SELECT tool_name, COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_tool_use_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "GROUP BY tool_name "
+                "ORDER BY cnt DESC"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    by_tool = [
+        ToolUseRow(tool_name=r.tool_name, event_count=int(r.cnt or 0))
+        for r in rows
+        if int(r.cnt or 0) > 0
+    ]
+    total = sum(t.event_count for t in by_tool)
+    return ToolUsageOut(
+        total=total,
+        by_tool=by_tool,
+        implementation_status="pending" if total == 0 else "active",
+    )
+
+
+class EngagementShareByMethod(BaseModel):
+    share_method: str
+    count: int
+
+
+class EngagementExtrasOut(BaseModel):
+    returning_engaged: int
+    share_total: int
+    share_by_method: list[EngagementShareByMethod]
+    internal_link_clicks: int
+    internal_link_ctr: float | None  # internal_link_clicks / total_sessions
+    text_copy_total: int
+
+
+async def _engagement_count(
+    session: AsyncSession, tenant_id: uuid.UUID, event_name: str, s: date, e: date
+) -> int:
+    row = (
+        await session.execute(
+            text(
+                "SELECT COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_engagement_signal_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "AND event_name = :ev"
+            ),
+            {"tid": str(tenant_id), "s": s, "e": e, "ev": event_name},
+        )
+    ).scalar_one()
+    return int(row or 0)
+
+
+@router.get("/engagement-extras", response_model=EngagementExtrasOut)
+async def engagement_extras(
+    days: int = 30,
+    tenant_id: uuid.UUID = Depends(require_tenant_id),
+    session: AsyncSession = Depends(get_db_session),
+) -> EngagementExtrasOut:
+    """サブ指標: 再訪 / シェア・URL コピー / 内部リンク CTR / 本文コピー合計。"""
+    await _set_ctx(session, tenant_id)
+    end = date.today()
+    start = end - timedelta(days=days)
+
+    returning = await _engagement_count(
+        session, tenant_id, "returning_visitor_engaged", start, end
+    )
+    share_rows = (
+        await session.execute(
+            text(
+                "SELECT sub_key, COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_engagement_signal_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e "
+                "AND event_name IN ('content_share', 'url_copy') "
+                "GROUP BY sub_key "
+                "ORDER BY cnt DESC"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).all()
+    share_by_method = [
+        EngagementShareByMethod(
+            share_method=r.sub_key if r.sub_key and r.sub_key != "-" else "(method 不明)",
+            count=int(r.cnt or 0),
+        )
+        for r in share_rows
+        if int(r.cnt or 0) > 0
+    ]
+    share_total = sum(b.count for b in share_by_method)
+    internal_clicks = await _engagement_count(
+        session, tenant_id, "internal_link_click", start, end
+    )
+    text_copy_total = (
+        await session.execute(
+            text(
+                "SELECT COALESCE(SUM(event_count), 0) AS cnt "
+                "FROM ga4_text_copy_daily "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).scalar_one()
+    sessions_total = (
+        await session.execute(
+            text(
+                "SELECT COALESCE(SUM(sessions), 0) AS cnt "
+                "FROM ga4_daily_metrics "
+                "WHERE tenant_id = :tid AND date BETWEEN :s AND :e"
+            ),
+            {"tid": str(tenant_id), "s": start, "e": end},
+        )
+    ).scalar_one()
+    sessions_total = int(sessions_total or 0)
+    ctr = (internal_clicks / sessions_total) if sessions_total > 0 else None
+    return EngagementExtrasOut(
+        returning_engaged=returning,
+        share_total=share_total,
+        share_by_method=share_by_method,
+        internal_link_clicks=internal_clicks,
+        internal_link_ctr=ctr,
+        text_copy_total=int(text_copy_total or 0),
+    )
+
+
 # === 記事/ページ単位のパフォーマンス ===
 
 # GA4 の pagePath(/blog/foo) と GSC の page(完全 URL)を URL の path 部分でつなぐ。

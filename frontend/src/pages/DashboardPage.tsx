@@ -44,6 +44,7 @@ import {
   fetchCompetitorContent,
   fetchCompetitorPatternsTop,
   fetchCvPaths,
+  fetchEngagementExtras,
   fetchFunnel,
   fetchHeatmap,
   fetchHourWeekdayHeatmap,
@@ -62,6 +63,7 @@ import {
   fetchSearchIntent,
   fetchSeasonality,
   fetchTextCopy,
+  fetchToolUsage,
   fetchTopQueries,
   generateNextActionsWithAi,
   replaceAlertRules,
@@ -331,6 +333,16 @@ const HELP: Record<string, { title: string; what: string; watch: string }> = {
     title: 'LP 別パフォーマンス',
     what: 'cta_click イベント(.cta-btn 等のクリック)を lp_id 別 + cta_id(lp-header / lp-body)別に集計。LP セッションから CVR も算出。',
     watch: 'CVR の高い LP のレイアウトを他 LP に展開。header と body の比較で CTA 配置の最適解が見える。',
+  },
+  tool_usage: {
+    title: 'ツール完走数',
+    what: 'tool_use_complete(WP 側のツール記事に data-tool-complete 属性を付けた要素のクリック)を tool_name 別に集計。',
+    watch: '0 件のままなら WP 側の HTML に属性が未設定。ツール記事の <button data-tool-complete="<name>"> を確認。',
+  },
+  engagement_extras: {
+    title: '追加エンゲージメント',
+    what: '再訪エンゲージ(2 回目以降 + 60秒以上)、シェア + URL コピー合算、内部リンク CTR(internal_link_click ÷ セッション)、本文コピー合計。',
+    watch: '再訪エンゲージ増 = 信頼形成。内部リンク CTR が低い → 関連記事ナビ位置や見出し構造を見直す候補。',
   },
 };
 
@@ -1430,6 +1442,141 @@ function LpPerformanceBlock({ days }: { days: number }) {
                       </li>
                     );
                   })}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ToolUsageBlock({ days }: { days: number }) {
+  const { data, isPending } = useQuery({
+    queryKey: ['dashboard', 'tool-usage', days],
+    queryFn: () => fetchToolUsage(days),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="ツール利用"
+          help="tool_usage"
+          ds={['ga4_tool_use']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : !data ? (
+          <p className="text-sm text-muted-foreground">データがありません。</p>
+        ) : data.implementation_status === 'pending' ? (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-900/30">
+            <div className="font-medium text-amber-900 dark:text-amber-200">
+              WP 側で <code>data-tool-complete</code> 属性が未設定です。
+            </div>
+            <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+              各ツール記事に <code>&lt;button data-tool-complete=&quot;&lt;name&gt;&quot;&gt;</code> を追加すると計測開始します。
+              属性が付くまで本指標は 0 のままです。
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-semibold tabular-nums">{data.total}</span>
+              <span className="text-xs text-muted-foreground">合計完走数</span>
+            </div>
+            <ul className="space-y-1 text-sm">
+              {data.by_tool.map((t) => (
+                <li
+                  key={t.tool_name}
+                  className="flex items-baseline justify-between"
+                >
+                  <span className="truncate">{t.tool_name}</span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {t.event_count}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EngagementExtrasBlock({ days }: { days: number }) {
+  const { data, isPending } = useQuery({
+    queryKey: ['dashboard', 'engagement-extras', days],
+    queryFn: () => fetchEngagementExtras(days),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <HeaderRow
+          title="追加エンゲージメント"
+          help="engagement_extras"
+          ds={['ga4_engagement', 'ga4_text_copy', 'ga4_daily']}
+        />
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <p className="text-sm text-muted-foreground">読み込み中…</p>
+        ) : !data ? (
+          <p className="text-sm text-muted-foreground">{AIO_EMPTY_HINT}</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div>
+                <div className="text-xs text-muted-foreground">再訪エンゲージ</div>
+                <div className="text-2xl font-semibold tabular-nums">
+                  {data.returning_engaged}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">シェア + URL コピー</div>
+                <div className="text-2xl font-semibold tabular-nums">
+                  {data.share_total}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">内部リンク CTR</div>
+                <div className="text-2xl font-semibold tabular-nums">
+                  {data.internal_link_ctr !== null
+                    ? `${(data.internal_link_ctr * 100).toFixed(1)}%`
+                    : '—'}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {data.internal_link_clicks} click /{' '}
+                  {data.internal_link_ctr !== null && data.internal_link_clicks > 0
+                    ? `${Math.round(data.internal_link_clicks / data.internal_link_ctr)} session`
+                    : 'session'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">本文コピー数</div>
+                <div className="text-2xl font-semibold tabular-nums">
+                  {data.text_copy_total}
+                </div>
+              </div>
+            </div>
+            {data.share_by_method.length > 0 && (
+              <div className="border-t border-border pt-2">
+                <div className="mb-1 text-xs text-muted-foreground">
+                  シェア手段の内訳
+                </div>
+                <ul className="space-y-1 text-xs">
+                  {data.share_by_method.map((m) => (
+                    <li
+                      key={m.share_method}
+                      className="flex items-baseline justify-between"
+                    >
+                      <span>{m.share_method}</span>
+                      <span className="tabular-nums">{m.count}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}
@@ -3700,6 +3847,14 @@ export default function DashboardPage() {
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">LP 別パフォーマンス</h2>
         <LpPerformanceBlock days={days} />
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">ツール利用 / 追加エンゲージメント</h2>
+        <div className="grid gap-4 md:grid-cols-2">
+          <ToolUsageBlock days={days} />
+          <EngagementExtrasBlock days={days} />
+        </div>
       </section>
 
       <NextActionsBlock />
